@@ -1,0 +1,26 @@
+{
+  "name": "Roadbook",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "features": {
+    // Docker-in-Docker lets the local Supabase stack run inside the container.
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [8081, 54321, 54323],
+  "portsAttributes": {
+    "8081": { "label": "Expo / Metro" },
+    "54321": { "label": "Supabase API" },
+    "54323": { "label": "Supabase Studio" }
+  },
+  // Install JS deps once the container is created.
+  "postCreateCommand": "npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "expo.vscode-expo-tools",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
+  "remoteUser": "node"
+}

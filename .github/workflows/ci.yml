@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, claude/plane-project-mvp-6I6WO]
   pull_request:
+  workflow_dispatch: {} # lets you run the full suite on demand from the Actions tab
 
 jobs:
   quality:

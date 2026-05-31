@@ -20,14 +20,34 @@ npm install
 cp .env.example .env   # Werte ausfüllen (s. u.)
 ```
 
-## Lokales Backend (Supabase CLI)
+## Lokales Backend (Supabase CLI) — wiederholbar
+**Empfohlen (ein Befehl, idempotent):**
+```bash
+npm run dev:up      # startet Supabase (Docker), wendet Migrations an,
+                    # schreibt .env (Supabase-Keys frisch, R2/Map bleiben Platzhalter)
+npm run rls:test    # RLS-Isolationsbeweis gegen das lokale Supabase
+npm run dev:down            # stoppt; `npm run dev:down -- --reset` wischt Daten
+```
+`dev:up` ist beliebig oft wiederholbar — die lokalen Keys sind deterministisch.
+
+**Manuell (Äquivalent):**
 ```bash
 npx supabase start          # startet Postgres/Auth/REST, wendet Migrations an
-npx supabase status -o env  # zeigt API_URL / ANON_KEY / SERVICE_ROLE_KEY
+npx supabase status -o env  # API_URL / ANON_KEY / SERVICE_ROLE_KEY
 ```
-Trage `API_URL` → `EXPO_PUBLIC_SUPABASE_URL` und `ANON_KEY` →
-`EXPO_PUBLIC_SUPABASE_ANON_KEY` in `.env` ein. Schema-Änderungen als neue Datei
-unter `supabase/migrations/` versionieren (additiv, s. README §12a).
+Schema-Änderungen als neue Datei unter `supabase/migrations/` versionieren
+(additiv, s. README §12a).
+
+### Dev-Container / Codespaces
+`.devcontainer/devcontainer.json` bringt Node 22 + Docker-in-Docker + die
+VS-Code-Expo-Tools mit. In GitHub Codespaces oder „Reopen in Container":
+Container öffnen → `npm run dev:up` → loslegen. So läuft das lokale Supabase
+reproduzierbar in einer wegwerfbaren Umgebung.
+
+### On-Demand in CI
+`.github/workflows/ci.yml` hat `workflow_dispatch` — du kannst die komplette
+Suite (Typecheck · Tests · Lint · **RLS-Beweis gegen frisch gebootetes Supabase**)
+jederzeit über den Actions-Tab per Klick starten, zusätzlich zu jedem Push/PR.
 
 > Cloud statt lokal: Projekt in Region **eu-central-1 / Frankfurt** anlegen
 > (README §7), Migrations mit `supabase db push` ausspielen.
