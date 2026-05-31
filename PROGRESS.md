@@ -29,15 +29,16 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] SQLite-DB-Init beim Start (Root-Layout)
 - [x] Checkpoint: registrieren & einloggen (Code/Typen, Gerätelauf später)
 
-### P2 — Schema + RLS 🔄
-- [ ] Migration `0001_init.sql` (Tabellen + SyncBase + Indizes, Client-UUID PK)
-- [ ] Migration `0002_rls.sql` (USING + WITH CHECK + deleted_at-Filter, Child via EXISTS)
+### P2 — Schema + RLS ✅ (Code) / ⏳ (Live-Run via CI)
+- [x] Migration `0001_init.sql` (Tabellen + SyncBase + Indizes, Client-UUID PK, Text-ISO-Timestamps)
+- [x] Migration `0002_rls.sql` (USING + WITH CHECK + deleted_at-Filter, Child via EXISTS, kein Hard-DELETE)
 - [x] Lokales SQLite-Schema (spiegelt SyncBase)
 - [x] mappers (snake_case ↔ camelCase) + Unit-Tests
 - [x] repositories (offline-first writes) für roadbook/route/stop/photo
-- [ ] `scripts/rls-test.ts` (2-User-Isolation) + CI-Job
-- [ ] Supabase `config.toml`
-- [ ] Checkpoint: isolierte Daten per Test belegt
+- [x] `scripts/rls-test.ts` (2-User-Isolation, 9 Checks) + CI-Job (`.github/workflows/ci.yml`)
+- [x] Supabase `config.toml` (via `supabase init`)
+- [⏳] Checkpoint: isolierte Daten per Test belegt — läuft in CI (lokaler Docker-Image-Pull
+      ist in der Build-Umgebung durch die Netzwerk-Policy blockiert; GitHub Actions zieht die Images)
 
 ### P3 — CRUD-UI ✅
 - [x] Roadbook-Liste + anlegen/soft-delete (long-press)
@@ -55,7 +56,7 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] `suggestion.ts` (start/stops/end, GPS-lose Fallback) — PURE + Unit-Tests
 - [x] reverse-geocoding (Nominatim dev, throttled) + Unit-Tests
 - [x] `compress.ts` (max 1920px) + `r2upload.ts` (presigned PUT)
-- [ ] Edge Function `r2-presign` → P2-Backend-Batch
+- [x] Edge Function `r2-presign` (SigV4-presigned PUT, user-scoped key, R2-Keys serverseitig)
 - [x] Editier-UI für den Vorschlag → speichern (`import.tsx`)
 
 ### P6 — Politur ⬜

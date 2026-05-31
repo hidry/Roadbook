@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
+    "@types/node": "^22.19.19",
     "@types/react": "~19.2.2",
     "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
@@ -53,7 +54,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts/tsconfig.json",
     "test": "jest",
     "lint": "expo lint",
     "db:start": "supabase start",

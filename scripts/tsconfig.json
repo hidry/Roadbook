@@ -1,0 +1,15 @@
+{
+  "comment": "Node-runtime config for repo scripts (run via tsx). Kept separate from the app tsconfig so Node globals don't leak into the React Native typecheck.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}
