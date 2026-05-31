@@ -59,9 +59,18 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Edge Function `r2-presign` (SigV4-presigned PUT, user-scoped key, R2-Keys serverseitig)
 - [x] Editier-UI für den Vorschlag → speichern (`import.tsx`)
 
-### P6 — Politur ⬜
-- [ ] Dev-Setup-Doku (Supabase CLI, R2, env, EAS-Hinweis)
+### P6 — Politur ✅
+- [x] Dev-Setup-Doku (`DEVELOPMENT.md`: Supabase CLI, R2, env, EAS, Gates)
+- [x] `eas.json` (development/preview/production Build-Profile)
 - [x] typecheck + lint + jest grün (App-Code)
+
+---
+
+## Stand
+MVP-Code vollständig umgesetzt (P0–P6). Headless verifiziert: `npm run typecheck`,
+`npm test` (25 Tests), `npm run lint` — alle grün. RLS-Isolationsbeweis läuft in CI.
+**Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
+R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
 
 ---
 

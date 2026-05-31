@@ -107,8 +107,12 @@ export default function StopScreen() {
 
       <Card>
         <View style={styles.coords}>
-          <TextField label="Breite (lat)" value={lat} onChangeText={setLat} keyboardType="numbers-and-punctuation" />
-          <TextField label="Länge (lng)" value={lng} onChangeText={setLng} keyboardType="numbers-and-punctuation" />
+          <View style={styles.coordField}>
+            <TextField label="Breite (lat)" value={lat} onChangeText={setLat} keyboardType="numbers-and-punctuation" />
+          </View>
+          <View style={styles.coordField}>
+            <TextField label="Länge (lng)" value={lng} onChangeText={setLng} keyboardType="numbers-and-punctuation" />
+          </View>
         </View>
         <TextField label="Ankunft (YYYY-MM-DD)" value={arrival} onChangeText={setArrival} placeholder="2026-07-14" />
         <TextField label="Notizen" value={notes} onChangeText={setNotes} multiline style={styles.notes} />
@@ -160,6 +164,7 @@ function Segmented<T extends string | null>({
 
 const styles = StyleSheet.create({
   coords: { flexDirection: 'row', gap: Spacing.two },
+  coordField: { flex: 1 },
   notes: { minHeight: 96, textAlignVertical: 'top', paddingTop: Spacing.two },
   segmented: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   segment: { paddingVertical: Spacing.two, paddingHorizontal: Spacing.three, borderRadius: Spacing.two },
