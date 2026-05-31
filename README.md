@@ -1,8 +1,9 @@
 # Projektplan: Roadbook-App für Wohnmobilreisen
 
-> **Status:** Planung · **Erstellt:** 2026-05-31 · **Owner:** Stefan Reinbold
+> **Status:** MVP implementiert (§8) · **Erstellt:** 2026-05-31 · **Owner:** Stefan Reinbold
 > **Verifikation:** Tech-Stack & API-Limits geprüft (Stand Mai 2026)
 > **Validierung:** Zero-Defect-Policy (Logik / Technik / Risiken / Alternativen)
+> **Umsetzung:** Lauffähiger Code im Repo — Setup & Befehle in [`DEVELOPMENT.md`](./DEVELOPMENT.md), Fortschritt in [`PROGRESS.md`](./PROGRESS.md), Stand-Details in [§15](#15-umsetzungsstand-mvp).
 
 ---
 
@@ -584,3 +585,42 @@ Keine App gefunden, die aus *bereits vorhandenen* Foto-Metadaten nachträglich e
 - Eigentliche Hürde: Reichweite/Marketing gegen Polarsteps (gratis, 20 Mio. User).
 - Als verkaufbares **Nischenprodukt** realistisch, nicht als Selbstläufer.
 - **Pragmatischer Pfad:** Erst MVP für Eigennutzung (~22 €/Monat Betrieb), Foto-Rekonstruktion als Differenzierer schärfen, dann anhand echter Nutzung über Monetarisierung entscheiden. Bestätigt die „erst MVP"-Entscheidung.
+
+---
+
+## 15. Umsetzungsstand (MVP)
+
+Der MVP-Scope aus §8 ist als lauffähiger Code umgesetzt. Setup & Befehle:
+[`DEVELOPMENT.md`](./DEVELOPMENT.md) · Phasen-Checkliste: [`PROGRESS.md`](./PROGRESS.md).
+
+### 15.1 Was implementiert ist
+| §8-Anforderung | Umsetzung |
+|---|---|
+| Auth (Sign-up/Login) | E-Mail+Passwort via Supabase Auth (`AuthProvider`, Session-Gate über Route-Gruppen) |
+| Roadbook/Route/Stop **CRUD mit RLS** | Offline-first Repositories (lokales SQLite zuerst) + vollständige RLS-Policies |
+| Foto-Import → EXIF/GPS → editierbarer Vorschlag | Clustering (<500 m UND <2 h) → Start/Stopps/Ende, GPS-lose Fotos als Fallback, Reverse-Geocoding, Editier-UI |
+| Bilder komprimiert nach R2 | `expo-image-manipulator` + presigned PUT (Edge Function `r2-presign`, R2-Keys serverseitig) |
+| Kartenansicht | MapLibre (Marker + Routenlinie), PMTiles-ready Style-URL via env |
+
+**One-Way-Doors (§9) gesetzt:** Multi-Tenant/RLS ab Tag 1 · Client-UUID-PKs ·
+Soft-Delete + `updatedAt` (offline-ready Schema **und** Schreibpfad) · Bilder nur über R2.
+
+### 15.2 Technische Hinweise / Abweichungen
+- **Expo SDK 56** statt 55: Die npm-Registry liefert SDK 56 inzwischen stabil
+  (die §3-Empfehlung „SDK 55" stammt vom Stand Mai 2026). Stack sonst wie §3.
+- **Auth-Methode** (offene Frage §13): für den MVP **E-Mail+Passwort** gewählt.
+- Bilder/Sync-Schema sind für Sharing (§8 raus) und volle Offline-Sync-Engine
+  (§5.4, Post-MVP) bereits vorbereitet — kein Schema-Umbau nötig.
+
+### 15.3 Verifikation
+Headless grün: `npm run typecheck`, `npm test` (25 Unit-Tests für Clustering /
+Suggestion / Mapper / Geocoding / EXIF-Datum), `npm run lint`. Der
+**RLS-Mandantentrennungs-Beweis** (§12a) läuft als 2-User-Test in CI
+(`.github/workflows/ci.yml`) gegen ein frisch gebootetes Supabase — bei jedem
+Push/PR und on-demand. Lokal/Codespaces reproduzierbar via `npm run dev:up`
+(Dev-Container mit Docker-in-Docker).
+
+### 15.4 Noch nicht hier verifizierbar (braucht Gerät/Secrets)
+Gerätelauf (Picker/EXIF/MapLibre-Rendering), echter R2-Upload, EAS-Build,
+Supabase-Cloud (Region `eu-central-1`) und Karten-Tiles (PMTiles-Hosting) —
+Schritte dazu in [`DEVELOPMENT.md`](./DEVELOPMENT.md).
