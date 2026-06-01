@@ -34,6 +34,10 @@ jobs:
           java-version: 17
       - run: npm ci
 
+      # Caches ~/.gradle (dependencies + Gradle dist + build cache) across runs.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       # The emulator needs writable /dev/kvm on ubuntu-latest.
       - name: Enable KVM
         run: |
@@ -42,15 +46,28 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # Skip the ~20-min build when the app inputs are unchanged (e.g. when only
+      # the workflow/emulator step changed): restore the prebuilt APK keyed on a
+      # hash of everything that affects it. The APK is cached even if a later
+      # step (Maestro) fails, so emulator/Maestro iterations don't rebuild.
+      - name: Cache built APK
+        id: apk-cache
+        uses: actions/cache@v4
+        with:
+          path: android/app/build/outputs/apk/release/app-release.apk
+          key: apk-x86_64-${{ hashFiles('package-lock.json', 'app.json', 'metro.config.js', 'src/**', 'assets/**') }}
+
       # Generate the native android/ project from app.json + config plugins.
       - name: Prebuild Android
+        if: steps.apk-cache.outputs.cache-hit != 'true'
         run: npx expo prebuild --platform android --no-install 2>&1 | tee prebuild.log
 
       # Release variant bundles the JS (no Metro) and is signed with the debug
       # keystore by the Expo/RN template (no secrets). Build only the emulator's
-      # ABI (x86_64) and skip lint for speed.
+      # ABI (x86_64), skip lint, and use the Gradle build cache for speed.
       - name: Build release APK (x86_64 only)
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -x lintVitalRelease 2>&1 | tee ../android-build.log
+        if: steps.apk-cache.outputs.cache-hit != 'true'
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -x lintVitalRelease --build-cache 2>&1 | tee ../android-build.log
         working-directory: android
 
       - name: Install Maestro
@@ -70,7 +87,7 @@ jobs:
         run: |
           exec > >(tee boot-step.log) 2>&1
           set -x
-          export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
           which adb avdmanager emulator || true
           echo "no" | avdmanager create avd -n e2e -k "$ANDROID_SYSTEM_IMAGE" -d pixel --force
           nohup emulator -avd e2e \
