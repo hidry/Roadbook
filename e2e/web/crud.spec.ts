@@ -10,6 +10,21 @@ test('sign up, then create a roadbook and a route', async ({ page }) => {
   const rbName = `Norwegen ${stamp}`;
   const routeTitle = `Westküste ${stamp}`;
 
+  // Surface in-browser errors (e.g. a swallowed SQLite write failure) into the
+  // test stdout so the CI diagnostic comment shows the real runtime cause.
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' || msg.type() === 'warning') console.log(`[browser:${msg.type()}] ${msg.text()}`);
+  });
+  page.on('pageerror', (err) => console.log(`[pageerror] ${err.message}`));
+  // create() runs in an onPress handler; a thrown error becomes an UNHANDLED
+  // rejection (not a pageerror), so capture those too.
+  await page.addInitScript(() => {
+    window.addEventListener('unhandledrejection', (e) => {
+      const r = (e as PromiseRejectionEvent).reason;
+      console.error('[unhandledrejection] ' + (r && r.message ? r.message : String(r)));
+    });
+  });
+
   await page.goto('/');
 
   // Register a fresh user (local Supabase has email confirmations disabled).
