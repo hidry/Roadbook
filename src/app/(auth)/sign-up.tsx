@@ -47,6 +47,7 @@ export default function SignUpScreen() {
 
         <TextField
           label="E-Mail"
+          testID="signup-email"
           autoCapitalize="none"
           autoComplete="email"
           keyboardType="email-address"
@@ -56,6 +57,7 @@ export default function SignUpScreen() {
         />
         <TextField
           label="Passwort"
+          testID="signup-password"
           secureTextEntry
           autoComplete="new-password"
           value={password}

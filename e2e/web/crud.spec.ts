@@ -13,9 +13,11 @@ test('sign up, then create a roadbook and a route', async ({ page }) => {
   await page.goto('/');
 
   // Register a fresh user (local Supabase has email confirmations disabled).
+  // Use testIDs: login + sign-up share the email placeholder and the web stack
+  // keeps the previous screen mounted, so a placeholder lookup is ambiguous.
   await page.getByText('Registrieren').click();
-  await page.getByPlaceholder('du@example.com').fill(email);
-  await page.getByPlaceholder('mind. 6 Zeichen').fill('Passw0rd!test');
+  await page.getByTestId('signup-email').fill(email);
+  await page.getByTestId('signup-password').fill('Passw0rd!test');
   await page.getByText('Konto erstellen').click();
 
   // Landed in the app (Roadbooks screen).
