@@ -64,14 +64,16 @@ jobs:
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "emulator" "$ANDROID_SYSTEM_IMAGE" 2>&1 | tee emulator-setup.log
 
       # Boot the emulator manually so all output is captured (the action hides
-      # boot errors in the runner log, which we can't read).
+      # boot errors in the unreadable runner log). The whole step is tee'd into
+      # boot-step.log so any failure (e.g. a tool not on PATH) is visible.
       - name: Boot emulator and run Maestro
         run: |
+          exec > >(tee boot-step.log) 2>&1
           set -x
-          echo "no" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" \
-            create avd -n e2e -k "$ANDROID_SYSTEM_IMAGE" -d pixel --force 2>&1 | tee -a emulator-setup.log
-          adb start-server
-          nohup "$ANDROID_SDK_ROOT/emulator/emulator" -avd e2e \
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
+          which adb avdmanager emulator || true
+          echo "no" | avdmanager create avd -n e2e -k "$ANDROID_SYSTEM_IMAGE" -d pixel --force
+          nohup emulator -avd e2e \
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -accel on -wipe-data \
             > emulator-boot.log 2>&1 &
           adb wait-for-device
@@ -95,6 +97,8 @@ jobs:
               '### ⚠️ Android E2E failed — diagnostics', '',
               '**Maestro output (tail):**',
               '```', tail('maestro-output.log', 120), '```',
+              '<details><summary>boot step (tail)</summary>',
+              '', '```', tail('boot-step.log', 60), '```', '</details>',
               '<details><summary>emulator boot (tail)</summary>',
               '', '```', tail('emulator-boot.log', 60), '```', '</details>',
               '<details><summary>emulator setup (tail)</summary>',
