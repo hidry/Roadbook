@@ -31,7 +31,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
       - run: npm ci
 
       # android-emulator-runner needs writable /dev/kvm on ubuntu-latest,
