@@ -1,10 +1,12 @@
 name: CI
 
 on:
+  # Pull requests validate feature branches; push only runs on main (post-merge)
+  # so a PR branch isn't built twice. workflow_dispatch allows on-demand runs.
   push:
-    branches: [main, claude/plane-project-mvp-6I6WO]
+    branches: [main]
   pull_request:
-  workflow_dispatch: {} # lets you run the full suite on demand from the Actions tab
+  workflow_dispatch: {}
 
 jobs:
   quality:
