@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  pull-requests: write # so a failing run can post its output as a PR comment
+
 jobs:
   web:
     name: Playwright web E2E
@@ -23,22 +27,64 @@ jobs:
         with:
           version: latest
       - name: Start Supabase (applies migrations)
-        run: supabase start
+        run: supabase start 2>&1 | tee supabase-start.log
 
       - name: Export web bundle with local Supabase env baked in
         run: |
-          set -a
-          eval "$(supabase status -o env | sed \
-            -e 's/^API_URL=/EXPO_PUBLIC_SUPABASE_URL=/' \
-            -e 's/^ANON_KEY=/EXPO_PUBLIC_SUPABASE_ANON_KEY=/')"
-          set +a
-          npm run web:export
+          set -o pipefail
+          {
+            set -a
+            eval "$(supabase status -o env | sed \
+              -e 's/^API_URL=/EXPO_PUBLIC_SUPABASE_URL=/' \
+              -e 's/^ANON_KEY=/EXPO_PUBLIC_SUPABASE_ANON_KEY=/')"
+            set +a
+            npm run web:export
+          } 2>&1 | tee web-export.log
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium 2>&1 | tee playwright-install.log
 
       - name: Run web E2E
-        run: npm run e2e:web
+        run: |
+          set -o pipefail
+          npm run e2e:web 2>&1 | tee e2e-output.log
+
+      - name: Post failure output as PR comment
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const tail = (file, n) => {
+              try { return fs.readFileSync(file, 'utf8').split('\n').slice(-n).join('\n'); }
+              catch { return '(no ' + file + ')'; }
+            };
+            const body = [
+              '### ⚠️ Web E2E failed — diagnostics',
+              '',
+              '**Playwright output (tail):**',
+              '```',
+              tail('e2e-output.log', 120),
+              '```',
+              '<details><summary>web export (tail)</summary>',
+              '',
+              '```',
+              tail('web-export.log', 40),
+              '```',
+              '</details>',
+              '<details><summary>playwright install (tail)</summary>',
+              '',
+              '```',
+              tail('playwright-install.log', 25),
+              '```',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
 
       - name: Upload Playwright report
         if: always()
