@@ -1,0 +1,31 @@
+/**
+ * Web stub for the route map. MapLibre (`@maplibre/maplibre-react-native`) is a
+ * native module with NO web support, so on web we must not even import it —
+ * Metro picks this `.web.tsx` over MapView.tsx for the web bundle. Markers/line
+ * are a device feature; here we render a neutral placeholder so the rest of the
+ * app (and the web E2E suite) runs.
+ */
+import { StyleSheet, View } from 'react-native';
+
+import { ThemedText } from '@/components/themed-text';
+import type { Stop } from '@/types/models';
+
+export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
+  return (
+    <View style={[styles.placeholder, style]} testID="route-map-web">
+      <ThemedText type="small">Karte ist auf dem Gerät (iOS/Android) verfügbar.</ThemedText>
+      <ThemedText type="small">{stops.length} Stopp(s) mit Koordinaten</ThemedText>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  placeholder: {
+    height: 240,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#dfe7ef',
+  },
+});

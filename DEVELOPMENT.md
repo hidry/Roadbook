@@ -68,6 +68,24 @@ npm run rls:test    # 2-User-RLS-Isolationsbeweis gegen lokales Supabase
 `.github/workflows/ci.yml` führt alle Gates aus und startet für `rls:test` ein
 lokales Supabase (GitHub Actions zieht die Docker-Images).
 
+## End-to-End-Tests (gestuft)
+**Web-E2E (Playwright)** — schnell, bei jedem Push/PR (`.github/workflows/e2e-web.yml`).
+Testet den echten App-Stack im Browser gegen die Web-Variante (`expo export
+--platform web`, SPA): App bootet → Login → Registrieren → Roadbook/Route
+anlegen (Auth via Supabase, CRUD via `expo-sqlite` Web/wa-sqlite). **Ohne** Karte
+(MapLibre ist web-los → `MapView.web.tsx`-Attrappe) und ohne native Foto/EXIF.
+```bash
+npm run dev:up           # lokales Supabase (für die CRUD-Tests)
+npm run e2e:web:local    # exportiert Web + fährt Playwright
+```
+> Lokal braucht es einen Chromium (`npx playwright install chromium`). In CI wird
+> der Browser automatisch geladen; das Web-Bundle wird mit den lokalen
+> Supabase-Keys gebaut, sodass auch der Auth+CRUD-Flow durchläuft.
+
+**Android-Emulator-E2E (Maestro)** — gerätenahe Tests inkl. Karte/native Module,
+laufen in GitHub Actions (KVM nur dort verfügbar), bei Merge/nightly. *(folgt als
+zweite Stufe — siehe PROGRESS.md.)*
+
 ## Foto-Upload (Cloudflare R2)
 Bilder gehen **nie** in Supabase Storage, sondern nach R2 (kein Egress, README §2.3/§9).
 1. R2-Bucket anlegen (z. B. `roadbook-photos`), öffentliche Lese-URL/Domain einrichten.

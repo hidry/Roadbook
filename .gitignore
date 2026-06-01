@@ -46,3 +46,10 @@ example
 # Supabase CLI local state
 supabase/.temp/
 supabase/.branches/
+
+# Web export + E2E artifacts
+dist/
+playwright-report/
+test-results/
+blob-report/
+.last-run.json
