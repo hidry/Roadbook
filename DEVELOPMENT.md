@@ -84,8 +84,15 @@ npx playwright install chromium # einmalig
 npm run e2e:web:local           # exportiert Web + fährt Playwright
 ```
 
-**Android-Emulator-E2E (Maestro) — Stufe 2 (geplant).** Gerätenahe Tests inkl.
-Karte/native Module; nur in GitHub Actions (KVM). Status: `PROGRESS.md`.
+**Android-Emulator-E2E (Maestro) — Stufe 2.** Gerätenahe Tests auf einem Android-
+Emulator; nur in GitHub Actions (KVM). Baut die App via `expo prebuild` +
+`assembleRelease` (debug-signiert, JS gebündelt — keine Secrets), bootet den
+Emulator und fährt die `.maestro/`-Flows. Aktuell: minimaler Smoke (App startet →
+Login). Lokal mit echtem Emulator/Gerät:
+```bash
+npx expo run:android        # App auf Emulator/Gerät installieren
+maestro test .maestro       # Flows fahren (Maestro installiert)
+```
 
 ### CI-Workflows & Trigger
 | Workflow | Inhalt | Trigger |
