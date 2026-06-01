@@ -57,17 +57,16 @@ jobs:
 
       - name: Install Maestro
         run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          { curl -fsSL "https://get.maestro.mobile.dev" | bash; } 2>&1 | tee maestro-install.log
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Run Maestro on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 30
           target: google_apis
           arch: x86_64
-          profile: pixel_6
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
           script: |
             set -x
@@ -91,6 +90,8 @@ jobs:
               '',
               '**Maestro output (tail):**',
               '```', tail('maestro-output.log', 120), '```',
+              '<details><summary>maestro install (tail)</summary>',
+              '', '```', tail('maestro-install.log', 30), '```', '</details>',
               '<details><summary>gradle build (tail)</summary>',
               '', '```', tail('android-build.log', 60), '```', '</details>',
               '<details><summary>prebuild (tail)</summary>',
