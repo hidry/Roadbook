@@ -5,6 +5,6 @@ const expoConfig = require('eslint-config-expo/flat');
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*', 'node_modules/*', 'supabase/.temp/*'],
+    ignores: ['dist/*', 'node_modules/*', 'supabase/.temp/*', 'e2e/*', 'e2e/**/*', 'playwright.config.ts', 'metro.config.js'],
   },
 ]);
