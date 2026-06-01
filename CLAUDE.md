@@ -17,10 +17,12 @@ npm run lint        # expo lint
 npm run dev:up      # boot local Supabase (Docker) + write .env  (idempotent)
 npm run dev:down    # stop it  (-- --reset wipes local data)
 npm run rls:test    # 2-user RLS tenant-isolation proof vs local Supabase
+npm run e2e:web:local  # web E2E: export web + Playwright (needs dev:up + chromium)
 npx expo start      # run the app (needs a custom dev client, see below)
 ```
-CI (`.github/workflows/ci.yml`) runs typecheck + test + lint, plus a job that
-boots Supabase and runs `rls:test`. Keep all of these green.
+CI: `ci.yml` (typecheck + test + lint + RLS proof) and `e2e-web.yml` (Playwright
+web E2E). Both run on PRs and on push to `main` only (no double runs on PR
+branches) + `workflow_dispatch`. See DEVELOPMENT.md "Tests & CI". Keep them green.
 
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device

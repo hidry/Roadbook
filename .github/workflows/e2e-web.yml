@@ -1,8 +1,10 @@
 name: E2E (Web)
 
 on:
+  # Pull requests validate feature branches; push only runs on main (post-merge)
+  # so a PR branch isn't built twice. workflow_dispatch allows on-demand runs.
   push:
-    branches: [main, claude/e2e-tests]
+    branches: [main]
   pull_request:
   workflow_dispatch: {}
 

@@ -58,33 +58,48 @@ npx expo start            # Dev-Server; Custom Dev Client öffnen (nicht Expo Go
 # bzw. npm run android / npm run ios
 ```
 
-## Qualitäts-Gates (laufen auch in CI)
+## Tests & CI
+Alle Stufen laufen in CI und sind lokal mit denselben Befehlen reproduzierbar.
+
+**Statische Gates**
 ```bash
-npm run typecheck   # tsc (App + scripts)
-npm test            # Jest: Clustering, Suggestion, Mapper, Geocoding, EXIF-Datum
+npm run typecheck   # tsc (App + scripts/)
+npm test            # Jest: pure Logik (Clustering, Suggestion, Mapper, Geocoding, EXIF-Datum)
 npm run lint        # expo lint
-npm run rls:test    # 2-User-RLS-Isolationsbeweis gegen lokales Supabase
 ```
-`.github/workflows/ci.yml` führt alle Gates aus und startet für `rls:test` ein
-lokales Supabase (GitHub Actions zieht die Docker-Images).
 
-## End-to-End-Tests (gestuft)
-**Web-E2E (Playwright)** — schnell, bei jedem Push/PR (`.github/workflows/e2e-web.yml`).
-Testet den echten App-Stack im Browser gegen die Web-Variante (`expo export
---platform web`, SPA): App bootet → Login → Registrieren → Roadbook/Route
-anlegen (Auth via Supabase, CRUD via `expo-sqlite` Web/wa-sqlite). **Ohne** Karte
-(MapLibre ist web-los → `MapView.web.tsx`-Attrappe) und ohne native Foto/EXIF.
+**RLS-Mandantentrennung** (`scripts/rls-test.ts`: 2 User, 9 Checks — der Sicherheitsnachweis, README §12a)
 ```bash
-npm run dev:up           # lokales Supabase (für die CRUD-Tests)
-npm run e2e:web:local    # exportiert Web + fährt Playwright
+npm run dev:up      # lokales Supabase
+npm run rls:test
 ```
-> Lokal braucht es einen Chromium (`npx playwright install chromium`). In CI wird
-> der Browser automatisch geladen; das Web-Bundle wird mit den lokalen
-> Supabase-Keys gebaut, sodass auch der Auth+CRUD-Flow durchläuft.
 
-**Android-Emulator-E2E (Maestro)** — gerätenahe Tests inkl. Karte/native Module,
-laufen in GitHub Actions (KVM nur dort verfügbar), bei Merge/nightly. *(folgt als
-zweite Stufe — siehe PROGRESS.md.)*
+**Web-E2E (Playwright) — Stufe 1.** Testet den echten App-Stack im Browser gegen
+den SPA-Web-Export: bootet → Registrieren → Roadbook/Route anlegen (Auth via
+Supabase, CRUD via `expo-sqlite` Web/wa-sqlite, **async** geöffnet). **Ohne**
+Karte (MapLibre web-los → `MapView.web.tsx`) und ohne native Foto/EXIF-Pfade.
+```bash
+npm run dev:up                  # lokales Supabase (für den CRUD-Flow)
+npx playwright install chromium # einmalig
+npm run e2e:web:local           # exportiert Web + fährt Playwright
+```
+
+**Android-Emulator-E2E (Maestro) — Stufe 2 (geplant).** Gerätenahe Tests inkl.
+Karte/native Module; nur in GitHub Actions (KVM). Status: `PROGRESS.md`.
+
+### CI-Workflows & Trigger
+| Workflow | Inhalt | Trigger |
+|---|---|---|
+| `ci.yml` | Typecheck · Test · Lint + RLS-Beweis (bootet Supabase) | PR · push→`main` · manuell |
+| `e2e-web.yml` | Playwright Web-E2E (bootet Supabase, exportiert Web, lädt Chromium) | PR · push→`main` · manuell |
+
+**Trigger-Strategie (keine Doppelläufe):** PRs validieren Feature-Branches;
+`push` läuft **nur auf `main`** (Post-Merge-Absicherung). So wird ein PR-Branch
+nicht doppelt gebaut. `workflow_dispatch` erlaubt manuelle Läufe im Actions-Tab.
+
+**Diagnose:** Schlägt der Web-E2E in einem PR fehl, postet der Workflow die
+Playwright-Ausgabe inkl. Browser-Konsole als PR-Kommentar — nützlich, wenn
+CI-Logs/Artefakte schwer zugänglich sind.
 
 ## Foto-Upload (Cloudflare R2)
 Bilder gehen **nie** in Supabase Storage, sondern nach R2 (kein Egress, README §2.3/§9).
