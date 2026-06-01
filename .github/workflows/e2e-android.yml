@@ -20,7 +20,7 @@ jobs:
   android:
     name: Maestro on Android emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +31,17 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
       - run: npm ci
+
+      # android-emulator-runner needs writable /dev/kvm on ubuntu-latest,
+      # otherwise the emulator never boots.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       # Generate the native android/ project from app.json + config plugins
       # (expo-sqlite, expo-image-picker/-media-library, MapLibre, …).
@@ -40,9 +50,10 @@ jobs:
 
       # Release variant: JS is bundled into the APK (no Metro needed) and the
       # Expo/RN template signs release with the debug keystore, so the APK is
-      # installable without any signing secrets.
-      - name: Build release APK
-        run: ./gradlew assembleRelease 2>&1 | tee ../android-build.log
+      # installable without any signing secrets. Build only the emulator's ABI
+      # (x86_64) and skip lint — building all 4 ABIs took ~50 min.
+      - name: Build release APK (x86_64 only)
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -x lintVitalRelease 2>&1 | tee ../android-build.log
         working-directory: android
 
       - name: Install Maestro
@@ -60,8 +71,11 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            adb install -r android/app/build/outputs/apk/release/app-release.apk
-            maestro test .maestro 2>&1 | tee maestro-output.log
+            set -x
+            touch maestro-output.log
+            adb wait-for-device
+            adb install -r android/app/build/outputs/apk/release/app-release.apk 2>&1 | tee -a maestro-output.log
+            maestro test .maestro 2>&1 | tee -a maestro-output.log
 
       - name: Post failure diagnostics as PR comment
         if: failure() && github.event_name == 'pull_request'
