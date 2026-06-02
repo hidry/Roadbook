@@ -129,7 +129,8 @@ export default function ImportScreen() {
           lng: s.lng,
           arrivalDate: s.arrivalDate,
         });
-        for (const pid of s.photoIds) {
+        // Photos taken AT the stop plus excursion photos attached to its day.
+        for (const pid of [...s.photoIds, ...s.attachedPhotoIds]) {
           const meta = metaById[pid];
           if (!meta) continue;
           const photo = await photoRepo.create({
