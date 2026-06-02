@@ -46,4 +46,46 @@ describe('suggestRoute', () => {
     expect(res.stops).toEqual([]);
     expect(res.unassignedPhotoIds).toEqual(['x']);
   });
+
+  it('attaches excursion photos to the surrounding stop instead of making a stop', () => {
+    const photos: PhotoMeta[] = [
+      { id: 'camp1', ...A, takenAt: '2026-07-01T19:00:00.000Z' },
+      { id: 'summit', ...C, takenAt: '2026-07-02T12:00:00.000Z' }, // far hike, transient
+      { id: 'camp2', ...A, takenAt: '2026-07-02T20:00:00.000Z' },
+    ];
+    const res = suggestRoute(photos);
+    expect(res.stops).toHaveLength(1);
+    expect(res.stops[0].photoIds).toEqual(['camp1', 'camp2']);
+    expect(res.stops[0].attachedPhotoIds).toEqual(['summit']);
+    expect(res.unassignedPhotoIds).toEqual([]);
+  });
+
+  it('attaches an excursion before the first stop to the following first stop', () => {
+    const photos: PhotoMeta[] = [
+      { id: 'pre', ...C, takenAt: '2026-07-01T08:00:00.000Z' }, // brief, before any stop
+      { id: 'camp1', ...A, takenAt: '2026-07-01T19:00:00.000Z' },
+      { id: 'camp2', ...A, takenAt: '2026-07-02T08:00:00.000Z' }, // overnight ⇒ the stop
+    ];
+    const res = suggestRoute(photos);
+    expect(res.stops).toHaveLength(1);
+    expect(res.stops[0].attachedPhotoIds).toEqual(['pre']);
+  });
+
+  it('lists the same place twice for a round trip (placeId stable, visitIndex 0/1)', () => {
+    const overnight = (id: string, place: typeof A, day: number): PhotoMeta[] => [
+      { id: `${id}-eve`, ...place, takenAt: `2026-07-0${day}T19:00:00.000Z` },
+      { id: `${id}-morn`, ...place, takenAt: `2026-07-0${day + 1}T08:00:00.000Z` },
+    ];
+    const photos: PhotoMeta[] = [
+      ...overnight('x1', A, 1),
+      ...overnight('mid', C, 2),
+      ...overnight('x2', A, 4),
+    ];
+    const res = suggestRoute(photos);
+    expect(res.stops).toHaveLength(3);
+    const xStops = res.stops.filter((s) => s.placeId === res.stops[0].placeId);
+    expect(xStops).toHaveLength(2);
+    expect(xStops.map((s) => s.visitIndex)).toEqual([0, 1]);
+    expect(res.stops.map((s) => s.role)).toEqual(['start', 'stop', 'end']);
+  });
 });
