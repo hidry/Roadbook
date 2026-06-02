@@ -8,7 +8,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "roadbook",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": true,
