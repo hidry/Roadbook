@@ -3,9 +3,12 @@
  * (README §4, step 4). PURE module (no React Native) so it is unit-tested
  * headlessly.
  *
- * Heuristic (MVP, README §4): two chronologically adjacent photos belong to the
- * SAME stop when they are < 500 m AND < 2 h apart. A new cluster starts as soon
- * as either threshold is exceeded.
+ * Heuristic (MVP): chronologically adjacent photos belong to the SAME stop while
+ * they stay within 500 m of each other along the travel track. A new stop begins
+ * only once the traveller has moved farther than that. Time is used ONLY to order
+ * the sequence — it does NOT split a stop, so a multi-hour or overnight stay at
+ * one place stays a single stop (a camper's evening + next-morning photos at the
+ * same site must not become two stops).
  */
 
 export interface GeoPoint {
@@ -26,7 +29,6 @@ export interface Cluster {
 }
 
 export const DISTANCE_THRESHOLD_M = 500;
-export const TIME_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 const EARTH_RADIUS_M = 6_371_000;
 const toRad = (deg: number): number => (deg * Math.PI) / 180;
@@ -56,8 +58,8 @@ export function clusterPhotos(points: GeoPoint[]): Cluster[] {
     const prev = sorted[i - 1];
     const cur = sorted[i];
     const distance = haversineMeters(prev.lat, prev.lng, cur.lat, cur.lng);
-    const gap = Math.abs(Date.parse(cur.takenAt) - Date.parse(prev.takenAt));
-    const sameCluster = distance < DISTANCE_THRESHOLD_M && gap < TIME_THRESHOLD_MS;
+    // Split on movement only — time gaps (overnight stays) must NOT split a stop.
+    const sameCluster = distance < DISTANCE_THRESHOLD_M;
     if (sameCluster) {
       groups[groups.length - 1].push(cur);
     } else {
