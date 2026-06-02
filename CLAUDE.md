@@ -20,9 +20,13 @@ npm run rls:test    # 2-user RLS tenant-isolation proof vs local Supabase
 npm run e2e:web:local  # web E2E: export web + Playwright (needs dev:up + chromium)
 npx expo start      # run the app (needs a custom dev client, see below)
 ```
-CI: `ci.yml` (typecheck + test + lint + RLS proof) and `e2e-web.yml` (Playwright
-web E2E). Both run on PRs and on push to `main` only (no double runs on PR
-branches) + `workflow_dispatch`. See DEVELOPMENT.md "Tests & CI". Keep them green.
+CI (`.github/workflows/`): `ci.yml` (typecheck + test + lint + RLS proof),
+`e2e-web.yml` (Playwright web E2E) and `e2e-android.yml` (Maestro smoke on an
+Android emulator) — these run on PRs and on push to `main` only (no double runs
+on PR branches) + `workflow_dispatch`. Plus two ops pipelines: `supabase-migrate.yml`
+(`supabase db push` of the cloud migrations) and `eas-build-android.yml` (kicks off
+a cloud EAS build of a standalone APK). See DEVELOPMENT.md "Tests & CI" /
+"Aufs Gerät bringen". Keep them green.
 
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device

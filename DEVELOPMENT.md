@@ -49,14 +49,59 @@ reproduzierbar in einer wegwerfbaren Umgebung.
 Suite (Typecheck · Tests · Lint · **RLS-Beweis gegen frisch gebootetes Supabase**)
 jederzeit über den Actions-Tab per Klick starten, zusätzlich zu jedem Push/PR.
 
-> Cloud statt lokal: Projekt in Region **eu-central-1 / Frankfurt** anlegen
-> (README §7), Migrations mit `supabase db push` ausspielen.
+### Cloud-Projekt (statt lokal)
+Projekt in Region **eu-central-1 / Frankfurt** anlegen (README §7). Die Migrations
+aus `supabase/migrations/**` ins Cloud-Projekt bringen — zwei Wege:
+
+- **Manuell (lokal, im Projektordner):**
+  ```bash
+  npx supabase login                              # einmalig, Browser
+  npx supabase link --project-ref <ref>           # ref = Settings → General → Reference ID
+  npx supabase db push                            # spielt 0001_init + 0002_rls ein
+  ```
+- **Pipeline (empfohlen):** `supabase-migrate.yml` fährt `supabase db push` bei jedem
+  Push auf `main`, der `supabase/migrations/**` ändert (+ manuell per `workflow_dispatch`,
+  z. B. um ein frisch neu angelegtes Projekt zu provisionieren). `db push` ist
+  **idempotent** — Supabase trackt angewandte Migrations in
+  `supabase_migrations.schema_migrations` und führt nur die neuen aus; Re-Runs sind
+  No-Ops (kein „nur wenn DB leer"-Guard nötig). Free-Tier-Projekte werden bei
+  Inaktivität nur **pausiert**, nicht gelöscht — nach Restore sind die Tabellen wieder da.
+  Benötigte Repo-Secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`.
+
+> Client-Keys (`EXPO_PUBLIC_SUPABASE_URL` + **anon/public** Key) stehen im Dashboard
+> unter Settings → API. Niemals den `service_role`/`secret` Key in die App/EAS-Env-Vars.
 
 ## App starten
 ```bash
 npx expo start            # Dev-Server; Custom Dev Client öffnen (nicht Expo Go)
 # bzw. npm run android / npm run ios
 ```
+
+## Aufs Gerät bringen (EAS)
+MapLibre & expo-sqlite sind native Module → **kein Expo Go**, es braucht einen
+eigenen Build. Zwei Wege:
+
+- **Dev Client (aktiv entwickeln, Live-Reload):** einmal
+  `eas build --profile development --platform android` bauen/installieren, dann
+  `npx expo start --dev-client`. Config kommt aus der lokalen `.env` (Metro bündelt
+  **auf deinem Rechner**).
+- **Standalone-APK (nur testen, ohne lokales Setup):** Workflow `eas-build-android.yml`
+  (Actions → *Run workflow*, Profil `preview`) stößt einen **Cloud-EAS-Build** an; die
+  fertige APK erscheint auf expo.dev und wird direkt aufs Handy installiert — **kein**
+  lokales Node/Metro/`.env` nötig. Der Compile läuft auf EAS-Servern; der Job
+  submittet nur (mit `--no-wait`).
+
+**Config für Cloud-Builds** kommt **nicht** aus `.env`, sondern aus den **EAS
+Environment Variables** (expo.dev → Project → Environment Variables), pro Profil
+gescoped über das `environment`-Feld in `eas.json`. Für `preview` setzen:
+`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (optional
+`EXPO_PUBLIC_MAP_STYLE_URL`). Diese `EXPO_PUBLIC_*`-Werte sind **nicht geheim** — sie
+reisen im Client-Bundle mit und werden durch RLS geschützt, nicht durch Verstecken.
+
+**Voraussetzungen:**
+- `app.json`: `owner` + `extra.eas.projectId` (sonst kann ein Robot-Token kein
+  `eas init` und der Build bricht mit *„EAS project not configured"* ab).
+- GitHub-Secret `EXPO_TOKEN` (expo.dev → Account → Access Tokens).
 
 ## Tests & CI
 Alle Stufen laufen in CI und sind lokal mit denselben Befehlen reproduzierbar.
@@ -99,6 +144,9 @@ maestro test .maestro       # Flows fahren (Maestro installiert)
 |---|---|---|
 | `ci.yml` | Typecheck · Test · Lint + RLS-Beweis (bootet Supabase) | PR · push→`main` · manuell |
 | `e2e-web.yml` | Playwright Web-E2E (bootet Supabase, exportiert Web, lädt Chromium) | PR · push→`main` · manuell |
+| `e2e-android.yml` | Maestro-Smoke auf Android-Emulator (Stufe 2): `prebuild` + `assembleRelease`, KVM, APK gecacht, Disk-Cleanup vorm Emulator | PR · push→`main` · nightly · manuell |
+| `supabase-migrate.yml` | `supabase db push` der Cloud-Migrations (idempotent, s. „Cloud-Projekt") | push→`main` bei `supabase/migrations/**` · manuell |
+| `eas-build-android.yml` | Stößt einen **Cloud-EAS-Build** einer Standalone-APK an (s. „Aufs Gerät bringen") | nur manuell (`workflow_dispatch`) |
 
 **Trigger-Strategie (keine Doppelläufe):** PRs validieren Feature-Branches;
 `push` läuft **nur auf `main`** (Post-Merge-Absicherung). So wird ein PR-Branch
