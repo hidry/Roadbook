@@ -79,8 +79,10 @@ Ein **zentrales Backend für alle User** der App. Trennung der Verantwortlichkei
 1. User wählt Bilder (expo-image-picker, mehrfach)
 2. Pro Bild: getAssetInfoAsync() → { location: {lat,lng}, exif.DateTimeOriginal }
 3. Sortiere chronologisch nach Zeitstempel (= Reiseverlauf)
-4. Clustere GPS-Punkte: räumlich+zeitlich nahe Punkte = ein Stopp
-   (Heuristik MVP: < 500 m UND < 2 h → selber Cluster)
+4. Clustere GPS-Punkte entlang der Zeitachse nach Ort = ein Stopp
+   (Heuristik MVP: < 500 m vom selben Ort → selber Cluster; ein neuer Stopp
+   beginnt erst, wenn man sich weiter wegbewegt. Zeit ordnet nur die Reihenfolge
+   und splittet NICHT — eine Übernachtung am selben Platz bleibt ein Stopp.)
 5. Reverse-Geocoding pro Cluster → Ortsname (Nominatim)
 6. Vorschlag: Start = erster Cluster, Stopps = mittlere, Ende = letzter
 7. User editiert: Stopp-Typ (Campingplatz/Stellplatz/freistehend),
@@ -598,7 +600,7 @@ Der MVP-Scope aus §8 ist als lauffähiger Code umgesetzt. Setup & Befehle:
 |---|---|
 | Auth (Sign-up/Login) | E-Mail+Passwort via Supabase Auth (`AuthProvider`, Session-Gate über Route-Gruppen) |
 | Roadbook/Route/Stop **CRUD mit RLS** | Offline-first Repositories (lokales SQLite zuerst) + vollständige RLS-Policies |
-| Foto-Import → EXIF/GPS → editierbarer Vorschlag | Clustering (<500 m UND <2 h) → Start/Stopps/Ende, GPS-lose Fotos als Fallback, Reverse-Geocoding, Editier-UI |
+| Foto-Import → EXIF/GPS → editierbarer Vorschlag | Clustering (<500 m, Distanz trennt – Zeit splittet nicht) → Start/Stopps/Ende, GPS-lose Fotos als Fallback, Reverse-Geocoding, Editier-UI |
 | Bilder komprimiert nach R2 | `expo-image-manipulator` + presigned PUT (Edge Function `r2-presign`, R2-Keys serverseitig) |
 | Kartenansicht | MapLibre (Marker + Routenlinie), PMTiles-ready Style-URL via env |
 

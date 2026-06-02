@@ -1,10 +1,4 @@
-import {
-  clusterPhotos,
-  haversineMeters,
-  DISTANCE_THRESHOLD_M,
-  TIME_THRESHOLD_MS,
-  type GeoPoint,
-} from '@/lib/photos/clustering';
+import { clusterPhotos, haversineMeters, DISTANCE_THRESHOLD_M, type GeoPoint } from '@/lib/photos/clustering';
 
 const BERGEN = { lat: 60.39299, lng: 5.32415 };
 const OSLO = { lat: 59.91387, lng: 10.75225 };
@@ -44,12 +38,24 @@ describe('clusterPhotos', () => {
     expect(clusterPhotos(points)).toHaveLength(2);
   });
 
-  it('splits when the time threshold is exceeded (even if location is the same)', () => {
+  it('keeps the same place in ONE stop across a long time gap (overnight stay)', () => {
     const points: GeoPoint[] = [
-      { id: 'a', ...BERGEN, takenAt: '2026-07-01T10:00:00.000Z' },
-      { id: 'b', ...BERGEN, takenAt: '2026-07-01T13:00:00.000Z' }, // same place, 3h later
+      { id: 'evening', ...BERGEN, takenAt: '2026-07-01T19:00:00.000Z' },
+      { id: 'morning', ...BERGEN, takenAt: '2026-07-02T08:00:00.000Z' }, // same site, 13h later
     ];
-    expect(clusterPhotos(points)).toHaveLength(2);
+    const clusters = clusterPhotos(points);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].photoIds).toEqual(['evening', 'morning']);
+  });
+
+  it('separates a there-and-back trip by movement, not time', () => {
+    const points: GeoPoint[] = [
+      { id: 'camp1', ...BERGEN, takenAt: '2026-07-01T18:00:00.000Z' },
+      { id: 'trip', ...OSLO, takenAt: '2026-07-02T12:00:00.000Z' }, // drove away
+      { id: 'camp2', ...BERGEN, takenAt: '2026-07-02T20:00:00.000Z' }, // back at the site
+    ];
+    // Moving away and back = three distinct stops in sequence.
+    expect(clusterPhotos(points)).toHaveLength(3);
   });
 
   it('sorts chronologically regardless of input order and sets arrival to earliest', () => {
@@ -62,8 +68,7 @@ describe('clusterPhotos', () => {
     expect(cluster.arrivalDate).toBe('2026-07-01T10:00:00.000Z');
   });
 
-  it('honours the documented thresholds (sanity check on constants)', () => {
+  it('honours the documented distance threshold (sanity check on constant)', () => {
     expect(DISTANCE_THRESHOLD_M).toBe(500);
-    expect(TIME_THRESHOLD_MS).toBe(2 * 60 * 60 * 1000);
   });
 });
