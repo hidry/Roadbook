@@ -12,7 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { photoRepo, routeRepo, stopRepo } from '@/lib/db/repositories';
-import { reverseGeocode } from '@/lib/geocoding';
+import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib/geocoding';
 import { compressPhoto } from '@/lib/photos/compress';
 import { pickAndReadPhotos, type PickedPhoto } from '@/lib/photos/exif';
 import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
@@ -69,26 +69,29 @@ export default function ImportScreen() {
       const suggestion = suggestRoute(photos);
       setUnassigned(suggestion.unassignedPhotoIds);
 
-      // Reverse-geocode each stop centroid (throttled inside the geocoder).
+      // Reverse-geocode each stop centroid (throttled + retried inside the geocoder).
       setPhase('geocoding');
       const named: SuggestedStop[] = [];
       let geocoded = 0;
+      let lastFail: { status: GeocodeStatus; httpStatus?: number } | null = null;
       for (const s of suggestion.stops) {
-        const place = await reverseGeocode(s.lat, s.lng);
-        if (place) geocoded++;
-        named.push({ ...s, name: place ?? s.name });
+        const r = await reverseGeocode(s.lat, s.lng);
+        if (r.name) geocoded++;
+        else lastFail = { status: r.status, httpStatus: r.httpStatus };
+        named.push({ ...s, name: r.name ?? s.name });
       }
       setStops(named);
       if (!title) setTitle(named[0]?.name ? `Reise: ${named[0].name}` : 'Neue Reise');
       setPhase('review');
 
       // GPS worked but no name resolved → the geocoder, not the photos, is the
-      // problem. Say so (non-blocking) so names can be set manually.
-      if (suggestion.stops.length > 0 && geocoded === 0) {
+      // problem. Say WHY (non-blocking) so names can be set manually.
+      if (suggestion.stops.length > 0 && geocoded === 0 && lastFail) {
         Alert.alert(
           'Ortsnamen nicht ermittelbar',
-          'Die Koordinaten wurden erkannt, aber der Ortsname-Dienst (Nominatim) war nicht erreichbar. ' +
-            'Die Stopps sind angelegt – du kannst die Namen manuell setzen.',
+          `Die Koordinaten wurden erkannt, aber der Ortsname-Dienst (Nominatim) lieferte keinen Namen.\n\n` +
+            `Grund: ${describeGeocodeStatus(lastFail.status, lastFail.httpStatus)}.\n\n` +
+            `Die Stopps sind angelegt – du kannst die Namen manuell setzen oder den Import später erneut versuchen.`,
         );
       }
     } catch (e) {
