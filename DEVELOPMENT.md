@@ -89,7 +89,14 @@ eigenen Build. Zwei Wege:
   (Actions → *Run workflow*, Profil `preview`) stößt einen **Cloud-EAS-Build** an; die
   fertige APK erscheint auf expo.dev und wird direkt aufs Handy installiert — **kein**
   lokales Node/Metro/`.env` nötig. Der Compile läuft auf EAS-Servern; der Job
-  submittet nur (mit `--no-wait`).
+  submittet nur (mit `--no-wait`). ⚠️ Cloud-Builds zählen gegen das **EAS-Free-Tier
+  (15 Android-Builds/Monat)** — für den Alltag besser der Runner-Build (nächster Punkt).
+- **Standalone-APK ohne EAS-Kontingent:** Workflow `eas-build-android-runner.yml`
+  (Actions → *Run workflow*) baut dieselbe App via `eas build --local` **auf dem
+  GitHub-Runner** statt auf Expos Servern — verbraucht **kein** Cloud-Kontingent,
+  nur GitHub-Actions-Minuten. Die fertige APK/AAB liegt als **Run-Artifact** zum
+  Download. Nutzt dieselbe `eas.json`/Env-Vars/Keystore via `EXPO_TOKEN`; Ergebnis
+  ist signiert. (Public Repo: Minuten frei; privat: 2.000 Linux-Min/Monat, Build ~20–40 min.)
 
 **Config für Cloud-Builds** kommt **nicht** aus `.env`, sondern aus den **EAS
 Environment Variables** (expo.dev → Project → Environment Variables), pro Profil
@@ -146,11 +153,20 @@ maestro test .maestro       # Flows fahren (Maestro installiert)
 | `e2e-web.yml` | Playwright Web-E2E (bootet Supabase, exportiert Web, lädt Chromium) | PR · push→`main` · manuell |
 | `e2e-android.yml` | Maestro-Smoke auf Android-Emulator (Stufe 2): `prebuild` + `assembleRelease`, KVM, APK gecacht, Disk-Cleanup vorm Emulator | PR · push→`main` · nightly · manuell |
 | `supabase-migrate.yml` | `supabase db push` der Cloud-Migrations (idempotent, s. „Cloud-Projekt") | push→`main` bei `supabase/migrations/**` · manuell |
-| `eas-build-android.yml` | Stößt einen **Cloud-EAS-Build** einer Standalone-APK an (s. „Aufs Gerät bringen") | nur manuell (`workflow_dispatch`) |
+| `eas-build-android.yml` | Stößt einen **Cloud-EAS-Build** einer Standalone-APK an (s. „Aufs Gerät bringen") — nutzt EAS-Kontingent | nur manuell (`workflow_dispatch`) |
+| `eas-build-android-runner.yml` | Baut die APK/AAB **auf dem Runner** (`eas build --local`), Artifact am Run — **kein** EAS-Kontingent | nur manuell (`workflow_dispatch`) |
 
 **Trigger-Strategie (keine Doppelläufe):** PRs validieren Feature-Branches;
 `push` läuft **nur auf `main`** (Post-Merge-Absicherung). So wird ein PR-Branch
 nicht doppelt gebaut. `workflow_dispatch` erlaubt manuelle Läufe im Actions-Tab.
+
+**Runner-Minuten sparen:** `ci.yml`/`e2e-web.yml`/`e2e-android.yml` haben je eine
+`concurrency`-Gruppe, die bei neuem Push **überholte PR-Läufe abbricht** (main nie),
+und einen `changes`-Job (paths-filter), der die schweren Jobs auf PRs **per
+job-level `if` überspringt**, wenn nichts App-/Native-Relevantes geändert wurde —
+bzw. den Supabase-RLS-Job, wenn kein DB-Code betroffen ist. Ein so übersprungener
+Job meldet „skipped" = **passing**, blockiert also keine required checks; `push`,
+`schedule` (nightly) und `workflow_dispatch` laufen immer vollständig.
 
 **Diagnose:** Schlägt der Web-E2E in einem PR fehl, postet der Workflow die
 Playwright-Ausgabe inkl. Browser-Konsole als PR-Kommentar — nützlich, wenn
@@ -174,6 +190,17 @@ das komprimierte JPEG direkt zu R2.
 **Protomaps/PMTiles auf R2** (README §3) — **nicht** `tile.openstreetmap.org`
 (kommerziell + offline untersagt). Ohne Style-URL rendert die Karte einen neutralen
 Hintergrund; Marker/Routenlinie funktionieren trotzdem.
+
+## Reverse-Geocoding (Stopp-Namen)
+Stopp-Koordinaten → Ortsnamen via `src/lib/geocoding`. Standard ist die öffentliche
+**Nominatim**-Instanz (nur DEV: max. 1 Anfrage/s, **nicht** für Produktion erlaubt —
+README §3/§11). Für Produktion `EXPO_PUBLIC_GEOCODER_URL` auf eine eigene
+Photon-/Nominatim-Instanz oder einen Anbieter zeigen lassen. Der Aufruf hat
+**Timeout + Retry** (transiente Fehler: Drosselung/Netz/5xx/Timeout) und scheitert
+**nie hart**: schlägt er fehl, werden die Stopps trotzdem angelegt (ohne Namen), und
+der Import zeigt den konkreten Grund (z. B. „HTTP 429 – gedrosselt"). Häufigste
+Ursache der Meldung „Ortsnamen nicht ermittelbar" ist die Drosselung der
+öffentlichen Instanz — der Retry bzw. ein erneuter Import später löst das meist.
 
 ## Was hier (Cloud-Build-Umgebung) nicht verifizierbar ist
 Gerätelauf (Picker/EXIF/MapLibre-Rendering), echter R2-Upload, EAS-Build und
