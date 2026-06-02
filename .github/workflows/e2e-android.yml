@@ -88,13 +88,24 @@ jobs:
           exec > >(tee boot-step.log) 2>&1
           set -x
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
-          which adb avdmanager emulator || true
+          ls -la /dev/kvm || echo "NO /dev/kvm"
+          emulator -accel-check || true
           echo "no" | avdmanager create avd -n e2e -k "$ANDROID_SYSTEM_IMAGE" -d pixel --force
           nohup emulator -avd e2e \
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -accel on -wipe-data \
             > emulator-boot.log 2>&1 &
-          adb wait-for-device
-          timeout 420 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 3; done'
+          # Fail fast (with the boot log) instead of hanging until the job timeout.
+          if ! timeout 420 adb wait-for-device; then
+            echo "::error::emulator did not come online within 420s"
+            echo "==== emulator-boot.log ===="; cat emulator-boot.log || true
+            exit 1
+          fi
+          if ! timeout 300 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 3; done'; then
+            echo "::error::emulator boot did not complete within 300s"
+            echo "==== emulator-boot.log ===="; cat emulator-boot.log || true
+            adb devices || true
+            exit 1
+          fi
           adb shell input keyevent 82 || true
           touch maestro-output.log
           adb install -r android/app/build/outputs/apk/release/app-release.apk 2>&1 | tee -a maestro-output.log
