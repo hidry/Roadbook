@@ -1,0 +1,41 @@
+name: Supabase migrations
+
+# Applies supabase/migrations/** to the linked Cloud project.
+#
+# `supabase db push` is idempotent: Supabase records applied migrations in
+# supabase_migrations.schema_migrations and only runs the ones not yet there —
+# so re-running is a no-op, and no "only if DB empty" guard is needed.
+#
+# Triggers: push to main that touches a migration file (the repo is the source
+# of truth), plus manual dispatch (e.g. to re-provision a freshly recreated
+# project). Not run on PR branches — migrations land only once merged.
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Never let two migration runs race against the same Cloud DB.
+concurrency:
+  group: supabase-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Push migrations to Supabase Cloud
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link project
+        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+      - name: Push migrations
+        run: supabase db push
