@@ -22,6 +22,19 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
+
+      # The emulator system image (~1.5 GB unpacked) failed to install with
+      # "No space left on device" after the Gradle build filled the disk.
+      # Reclaim ~25 GB of preinstalled toolchains we never use (Haskell, .NET,
+      # Swift, PowerShell) + Docker images, leaving headroom for the AVD.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /opt/ghc /usr/local/.ghcup /usr/share/dotnet \
+            /usr/share/swift /usr/local/share/powershell /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h /
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
