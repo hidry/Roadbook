@@ -1,8 +1,8 @@
 name: E2E (Android)
 
 # Stage 2: native device-like E2E on an Android emulator (KVM is only available
-# on GitHub-hosted runners, not in dev containers). Heavier/slower than the web
-# E2E. Runs on PRs (to iterate), on push to main, nightly, and on demand.
+# on GitHub-hosted runners). Heavier/slower than the web E2E. Runs on PRs (to
+# iterate), on push to main, nightly, and on demand.
 on:
   pull_request:
   push:
@@ -19,9 +19,7 @@ jobs:
   android:
     name: Maestro on Android emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    env:
-      ANDROID_SYSTEM_IMAGE: 'system-images;android-30;google_apis;x86_64'
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,9 +45,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       # Skip the ~20-min build when the app inputs are unchanged (e.g. when only
-      # the workflow/emulator step changed): restore the prebuilt APK keyed on a
-      # hash of everything that affects it. The APK is cached even if a later
-      # step (Maestro) fails, so emulator/Maestro iterations don't rebuild.
+      # the workflow changed): restore the prebuilt APK keyed on a hash of
+      # everything that affects it. Cached even if a later step fails, so
+      # emulator/Maestro iterations don't rebuild.
       - name: Cache built APK
         id: apk-cache
         uses: actions/cache@v4
@@ -57,14 +55,13 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
           key: apk-x86_64-${{ hashFiles('package-lock.json', 'app.json', 'metro.config.js', 'src/**', 'assets/**') }}
 
-      # Generate the native android/ project from app.json + config plugins.
       - name: Prebuild Android
         if: steps.apk-cache.outputs.cache-hit != 'true'
         run: npx expo prebuild --platform android --no-install 2>&1 | tee prebuild.log
 
       # Release variant bundles the JS (no Metro) and is signed with the debug
       # keystore by the Expo/RN template (no secrets). Build only the emulator's
-      # ABI (x86_64), skip lint, and use the Gradle build cache for speed.
+      # ABI (x86_64), skip lint, use the Gradle build cache.
       - name: Build release APK (x86_64 only)
         if: steps.apk-cache.outputs.cache-hit != 'true'
         run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -x lintVitalRelease --build-cache 2>&1 | tee ../android-build.log
@@ -75,41 +72,22 @@ jobs:
           { curl -fsSL "https://get.maestro.mobile.dev" | bash; } 2>&1 | tee maestro-install.log
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
-      - name: Install emulator system image
-        run: |
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "emulator" "$ANDROID_SYSTEM_IMAGE" 2>&1 | tee emulator-setup.log
-
-      # Boot the emulator manually so all output is captured (the action hides
-      # boot errors in the unreadable runner log). The whole step is tee'd into
-      # boot-step.log so any failure (e.g. a tool not on PATH) is visible.
-      - name: Boot emulator and run Maestro
-        run: |
-          exec > >(tee boot-step.log) 2>&1
-          set -x
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
-          ls -la /dev/kvm || echo "NO /dev/kvm"
-          emulator -accel-check || true
-          echo "no" | avdmanager create avd -n e2e -k "$ANDROID_SYSTEM_IMAGE" -d pixel --force
-          nohup emulator -avd e2e \
-            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -accel on -wipe-data \
-            > emulator-boot.log 2>&1 &
-          # Fail fast (with the boot log) instead of hanging until the job timeout.
-          if ! timeout 420 adb wait-for-device; then
-            echo "::error::emulator did not come online within 420s"
-            echo "==== emulator-boot.log ===="; cat emulator-boot.log || true
-            exit 1
-          fi
-          if ! timeout 300 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 3; done'; then
-            echo "::error::emulator boot did not complete within 300s"
-            echo "==== emulator-boot.log ===="; cat emulator-boot.log || true
-            adb devices || true
-            exit 1
-          fi
-          adb shell input keyevent 82 || true
-          touch maestro-output.log
-          adb install -r android/app/build/outputs/apk/release/app-release.apk 2>&1 | tee -a maestro-output.log
-          maestro test .maestro 2>&1 | tee -a maestro-output.log
+      # The action handles SDK image install, AVD creation (in the right place)
+      # and waiting for boot, then runs the script. Its output goes to the job
+      # log (readable via get_job_logs) if anything fails.
+      - name: Run Maestro on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb devices
+            adb install -r android/app/build/outputs/apk/release/app-release.apk 2>&1 | tee maestro-output.log
+            maestro test .maestro 2>&1 | tee -a maestro-output.log
 
       - name: Post failure diagnostics as PR comment
         if: failure() && github.event_name == 'pull_request'
@@ -124,15 +102,7 @@ jobs:
             const body = [
               '### ⚠️ Android E2E failed — diagnostics', '',
               '**Maestro output (tail):**',
-              '```', tail('maestro-output.log', 120), '```',
-              '<details><summary>boot step (tail)</summary>',
-              '', '```', tail('boot-step.log', 60), '```', '</details>',
-              '<details><summary>emulator boot (tail)</summary>',
-              '', '```', tail('emulator-boot.log', 60), '```', '</details>',
-              '<details><summary>emulator setup (tail)</summary>',
-              '', '```', tail('emulator-setup.log', 25), '```', '</details>',
-              '<details><summary>maestro install (tail)</summary>',
-              '', '```', tail('maestro-install.log', 15), '```', '</details>',
+              '```', tail('maestro-output.log', 150), '```',
               '<details><summary>gradle build (tail)</summary>',
               '', '```', tail('android-build.log', 40), '```', '</details>',
             ].join('\n');
@@ -148,8 +118,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-e2e-logs
-          path: |
-            *.log
-            ~/.maestro/tests
+          path: '*.log'
           retention-days: 7
           if-no-files-found: ignore
