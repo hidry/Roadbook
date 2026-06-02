@@ -8,13 +8,45 @@ on:
   pull_request:
   workflow_dispatch: {}
 
+# Cancel superseded runs on the same PR branch (rapid pushes); never cancel main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: write # so a failing run can post its output as a PR comment
 
 jobs:
+  # On PRs, only run the (cheap-ish) web E2E when app-relevant files changed —
+  # skips it for docs/CI-only PRs. Always runs on push/schedule/dispatch.
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.f.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            app:
+              - 'src/**'
+              - 'assets/**'
+              - 'app.json'
+              - 'metro.config.js'
+              - 'package-lock.json'
+              - 'supabase/**'
+              - 'playwright.config.ts'
+              - 'e2e/**'
+              - '.github/workflows/e2e-web.yml'
+
   web:
     name: Playwright web E2E
+    needs: changes
+    # Skipped (= passing) on PRs without app changes, so it never blocks merge.
+    if: github.event_name != 'pull_request' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

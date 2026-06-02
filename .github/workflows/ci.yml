@@ -8,7 +8,37 @@ on:
   pull_request:
   workflow_dispatch: {}
 
+# Cancel superseded runs on the same PR branch (rapid pushes); never cancel main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read # paths-filter reads the PR's changed files
+
 jobs:
+  # Detect whether DB/RLS-relevant files changed, to gate the slow Supabase job
+  # on PRs (typecheck/test/lint always run). On non-PR events everything runs.
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      db: ${{ steps.f.outputs.db }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            db:
+              - 'supabase/**'
+              - 'src/lib/db/**'
+              - 'src/lib/sync/**'
+              - 'scripts/**'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+
   quality:
     name: Typecheck · Test · Lint
     runs-on: ubuntu-latest
@@ -28,6 +58,10 @@ jobs:
 
   rls:
     name: RLS tenant-isolation proof
+    needs: changes
+    # Skip on PRs that don't touch DB/RLS code (reports "skipped" = passing, so
+    # it won't block a required check). Always runs on push/schedule/dispatch.
+    if: github.event_name != 'pull_request' || needs.changes.outputs.db == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

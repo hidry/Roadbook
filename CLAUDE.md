@@ -23,7 +23,12 @@ npx expo start      # run the app (needs a custom dev client, see below)
 CI (`.github/workflows/`): `ci.yml` (typecheck + test + lint + RLS proof),
 `e2e-web.yml` (Playwright web E2E) and `e2e-android.yml` (Maestro smoke on an
 Android emulator) — these run on PRs and on push to `main` only (no double runs
-on PR branches) + `workflow_dispatch`. Plus two ops pipelines: `supabase-migrate.yml`
+on PR branches) + `workflow_dispatch`. To save runner minutes: each has a
+`concurrency` group that cancels superseded PR runs, and a `changes`
+(paths-filter) job that gates the heavy work on PRs — the E2E jobs skip when no
+app/native files changed, and `ci.yml`'s Supabase RLS job skips when no DB code
+changed (a skipped job reports "passing", so required checks aren't blocked).
+Plus two ops pipelines: `supabase-migrate.yml`
 (`supabase db push` of the cloud migrations) and two manual (`workflow_dispatch`)
 Android build pipelines: `eas-build-android.yml` (CLOUD EAS build — uses the
 limited free build quota) and `eas-build-android-runner.yml` (compiles on the
