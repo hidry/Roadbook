@@ -1,5 +1,11 @@
-name: EAS build (Android)
+name: Android build · EAS cloud (uses build quota)
 
+# MANUAL ONLY (workflow_dispatch) — never runs on push/PR, so it never burns the
+# limited free EAS build quota by accident. Use this for "real" release builds.
+# For everyday installable APKs WITHOUT touching the quota, prefer the sibling
+# workflow "Android build · GitHub runner (no EAS quota)" (eas-build-android-runner.yml),
+# which compiles on the GitHub runner via `eas build --local`.
+#
 # Kicks off a CLOUD EAS build of a standalone, internal-distribution Android
 # build you can install straight on a phone — no local Node/Metro/.env needed.
 #

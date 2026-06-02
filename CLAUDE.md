@@ -24,9 +24,11 @@ CI (`.github/workflows/`): `ci.yml` (typecheck + test + lint + RLS proof),
 `e2e-web.yml` (Playwright web E2E) and `e2e-android.yml` (Maestro smoke on an
 Android emulator) — these run on PRs and on push to `main` only (no double runs
 on PR branches) + `workflow_dispatch`. Plus two ops pipelines: `supabase-migrate.yml`
-(`supabase db push` of the cloud migrations) and `eas-build-android.yml` (kicks off
-a cloud EAS build of a standalone APK). See DEVELOPMENT.md "Tests & CI" /
-"Aufs Gerät bringen". Keep them green.
+(`supabase db push` of the cloud migrations) and two manual (`workflow_dispatch`)
+Android build pipelines: `eas-build-android.yml` (CLOUD EAS build — uses the
+limited free build quota) and `eas-build-android-runner.yml` (compiles on the
+GitHub runner via `eas build --local` — installable APK artifact, NO cloud
+quota). See DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green.
 
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device
