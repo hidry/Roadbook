@@ -52,9 +52,9 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 
 ### P5 — Foto-Import & Routenvorschlag ✅ (Logik) / 🔄 (Edge Function)
 - [x] picker + EXIF (`getAssetInfoAsync`, ACCESS_MEDIA_LOCATION)
-- [x] `clustering.ts` (<500 m UND <2 h) — PURE + Unit-Tests
-- [x] `suggestion.ts` (start/stops/end, GPS-lose Fallback) — PURE + Unit-Tests
-- [x] reverse-geocoding (Nominatim dev, throttled) + Unit-Tests
+- [x] `clustering.ts` (Place→Visit→Stop: Orts-Cluster, Übernachtung via Nachtlücke, Ausflüge angehängt; s. `docs/stop-detection-spec.md`) — PURE + Unit-Tests
+- [x] `suggestion.ts` (start/stops/end, Wiederkehr/`visitIndex`, Ausflugs-Anhang, GPS-lose Fallback) — PURE + Unit-Tests
+- [x] reverse-geocoding (Nominatim dev, throttled + Timeout/Retry/Diagnose, `EXPO_PUBLIC_GEOCODER_URL`) + Unit-Tests
 - [x] `compress.ts` (max 1920px) + `r2upload.ts` (presigned PUT)
 - [x] Edge Function `r2-presign` (SigV4-presigned PUT, user-scoped key, R2-Keys serverseitig)
 - [x] Editier-UI für den Vorschlag → speichern (`import.tsx`)
