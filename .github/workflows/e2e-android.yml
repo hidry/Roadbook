@@ -1,0 +1,145 @@
+name: E2E (Android)
+
+# Stage 2: native device-like E2E on an Android emulator (KVM is only available
+# on GitHub-hosted runners). Heavier/slower than the web E2E. Runs on PRs (to
+# iterate), on push to main, nightly, and on demand.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * *' # nightly
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write # post failure diagnostics as a PR comment
+
+jobs:
+  android:
+    name: Maestro on Android emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      # The emulator system image (~1.5 GB unpacked) failed to install with
+      # "No space left on device" after the Gradle build filled the disk.
+      # Reclaim ~25 GB of preinstalled toolchains we never use (Haskell, .NET,
+      # Swift, PowerShell) + Docker images, leaving headroom for the AVD.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /opt/ghc /usr/local/.ghcup /usr/share/dotnet \
+            /usr/share/swift /usr/local/share/powershell /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+
+      # Caches ~/.gradle (dependencies + Gradle dist + build cache) across runs.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The emulator needs writable /dev/kvm on ubuntu-latest.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Skip the ~20-min build when the app inputs are unchanged (e.g. when only
+      # the workflow changed): restore the prebuilt APK keyed on a hash of
+      # everything that affects it. Cached even if a later step fails, so
+      # emulator/Maestro iterations don't rebuild.
+      - name: Restore built APK
+        id: apk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: android/app/build/outputs/apk/release/app-release.apk
+          key: apk-x86_64-${{ hashFiles('package-lock.json', 'app.json', 'metro.config.js', 'src/**', 'assets/**') }}
+
+      - name: Prebuild Android
+        if: steps.apk-cache.outputs.cache-hit != 'true'
+        run: npx expo prebuild --platform android --no-install 2>&1 | tee prebuild.log
+
+      # Release variant bundles the JS (no Metro) and is signed with the debug
+      # keystore by the Expo/RN template (no secrets). Build only the emulator's
+      # ABI (x86_64), skip lint, use the Gradle build cache.
+      - name: Build release APK (x86_64 only)
+        if: steps.apk-cache.outputs.cache-hit != 'true'
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -x lintVitalRelease --build-cache 2>&1 | tee ../android-build.log
+        working-directory: android
+
+      # Save right after a successful build so the APK is cached even when a
+      # later step (emulator/Maestro) fails — avoids rebuilding every iteration.
+      - name: Save built APK
+        if: steps.apk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: android/app/build/outputs/apk/release/app-release.apk
+          key: apk-x86_64-${{ hashFiles('package-lock.json', 'app.json', 'metro.config.js', 'src/**', 'assets/**') }}
+
+      - name: Install Maestro
+        run: |
+          { curl -fsSL "https://get.maestro.mobile.dev" | bash; } 2>&1 | tee maestro-install.log
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # The action handles SDK image install, AVD creation (in the right place)
+      # and waiting for boot, then runs the script. Its output goes to the job
+      # log (readable via get_job_logs) if anything fails.
+      - name: Run Maestro on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: aosp_atd
+          arch: x86_64
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb devices
+            adb install -r android/app/build/outputs/apk/release/app-release.apk 2>&1 | tee maestro-output.log
+            maestro test .maestro 2>&1 | tee -a maestro-output.log
+
+      - name: Post failure diagnostics as PR comment
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const tail = (file, n) => {
+              try { return fs.readFileSync(file, 'utf8').split('\n').slice(-n).join('\n'); }
+              catch { return '(no ' + file + ')'; }
+            };
+            const body = [
+              '### ⚠️ Android E2E failed — diagnostics', '',
+              '**Maestro output (tail):**',
+              '```', tail('maestro-output.log', 150), '```',
+              '<details><summary>gradle build (tail)</summary>',
+              '', '```', tail('android-build.log', 40), '```', '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-e2e-logs
+          path: '*.log'
+          retention-days: 7
+          if-no-files-found: ignore
