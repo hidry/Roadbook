@@ -2,6 +2,7 @@
   "expo": {
     "name": "Roadbook",
     "slug": "roadbook",
+    "owner": "hidry",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -65,6 +66,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "60b0e3b8-004c-4afe-b297-e3332ea16968"
+      }
     }
   }
 }
