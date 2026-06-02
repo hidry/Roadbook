@@ -125,6 +125,25 @@ describe('clusterPhotos — places, visits, stops', () => {
     expect(lunch.isStop).toBe(false);
   });
 
+  it('detects overnight camps from the night GAP even when shot only once', () => {
+    // Real-world "mixed" pattern: only ONE camp is shot evening + next morning;
+    // the others get a single evening photo. Plus a midday hike on day 3.
+    // Regression: the dwell-only model collapsed this to a single stop because
+    // only the evening+morning camp cleared the bar — the rest were absorbed.
+    const TRAIL = { lat: 61.5, lng: 9.0 }; // far from every camp
+    const points: GeoPoint[] = [
+      { id: 'a', ...BERGEN, takenAt: '2026-07-01T19:00:00.000Z' }, // camp A, evening only
+      { id: 'b-eve', ...VOSS, takenAt: '2026-07-02T19:00:00.000Z' }, // camp B, evening +
+      { id: 'b-morn', ...VOSS, takenAt: '2026-07-03T08:00:00.000Z' }, //         morning
+      { id: 'hike', ...TRAIL, takenAt: '2026-07-03T13:00:00.000Z' }, // day-3 excursion
+      { id: 'c', ...FLAM, takenAt: '2026-07-03T19:00:00.000Z' }, // camp C, evening only
+      { id: 'd', ...OSLO, takenAt: '2026-07-04T19:00:00.000Z' }, // camp D, evening only
+    ];
+    expect(stops(points)).toHaveLength(4); // A, B, C, D — not 1
+    const hike = clusterPhotos(points).find((v) => v.photoIds.includes('hike'))!;
+    expect(hike.isStop).toBe(false); // the hike stays an excursion
+  });
+
   it('promotes every visit to a stop when nothing is significant (short day trip)', () => {
     const points: GeoPoint[] = [
       { id: 'a', ...BERGEN, takenAt: '2026-07-01T10:00:00.000Z' },
