@@ -42,9 +42,24 @@ export default function ImportScreen() {
   async function pick() {
     try {
       setPhase('reading');
-      const photos = await pickAndReadPhotos();
+      const { photos, diagnostics } = await pickAndReadPhotos();
       if (photos.length === 0) {
         setPhase('idle');
+        return;
+      }
+      // No GPS at all → the route can't be built. Surface WHY so the user can
+      // fix it (usually Android's "limited" photo access stripping location).
+      if (diagnostics.withGps === 0) {
+        setPhase('idle');
+        Alert.alert(
+          'Keine GPS-Daten gefunden',
+          `Aus ${diagnostics.total} Foto(s) konnte kein Standort gelesen werden.\n\n` +
+            `• Foto-Standortzugriff: ${diagnostics.mediaLibraryGranted ? 'erlaubt' : 'NICHT erlaubt'}\n` +
+            `• Fotos ohne Medien-ID: ${diagnostics.assetIdMissing}/${diagnostics.total}\n` +
+            `• Mit Aufnahmezeit: ${diagnostics.withTime}/${diagnostics.total}\n\n` +
+            `Tipp: Einstellungen → Apps → Roadbook → Berechtigungen → „Fotos und Medien" auf „Alle zulassen" ` +
+            `stellen (nicht „Auswählen"), damit der eingebettete Standort lesbar ist.`,
+        );
         return;
       }
       const map: Record<string, PickedPhoto> = {};

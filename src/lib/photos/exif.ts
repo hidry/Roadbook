@@ -3,6 +3,8 @@
  * for multi-select and MediaLibrary.getAssetInfoAsync() for reliable GPS/time
  * (README §3). On Android, GPS in photo metadata requires ACCESS_MEDIA_LOCATION
  * (declared in app.json AND granted at runtime) — otherwise location is empty.
+ * The structured MediaLibrary location is the reliable source; picker EXIF is a
+ * fallback and varies by platform (numbers, "num/den" rationals or DMS arrays).
  *
  * Native module wrapper — not unit-tested; the parsing it relies on lives in the
  * pure `exif-date.ts` (which is tested).
@@ -20,21 +22,69 @@ export interface PickedPhoto {
   takenAt: string | null;
 }
 
+/** Why an import yielded no usable GPS — surfaced to the user to self-diagnose. */
+export interface PickDiagnostics {
+  total: number;
+  withGps: number;
+  withTime: number;
+  /** Photos the picker returned without a MediaLibrary id (limited access). */
+  assetIdMissing: number;
+  mediaLibraryGranted: boolean;
+}
+
+export interface PickOutcome {
+  photos: PickedPhoto[];
+  diagnostics: PickDiagnostics;
+}
+
+/** Parse one EXIF coordinate component into a decimal number. */
+function rationalToNumber(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string') {
+    if (v.includes('/')) {
+      const [a, b] = v.split('/').map(Number);
+      return b ? a / b : null;
+    }
+    const n = parseFloat(v.replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** Coordinate may arrive as a decimal, a string, or a [deg, min, sec] array. */
+function toDecimal(value: unknown): number | null {
+  if (Array.isArray(value)) {
+    const [d = 0, m = 0, s = 0] = value.map(rationalToNumber).map((n) => n ?? 0);
+    const dec = d + m / 60 + s / 3600;
+    return Number.isFinite(dec) ? dec : null;
+  }
+  return rationalToNumber(value);
+}
+
 function signedCoord(value: unknown, ref: unknown): number | null {
-  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  const dec = toDecimal(value);
+  if (dec == null) return null;
   const r = typeof ref === 'string' ? ref.toUpperCase() : '';
   const sign = r === 'S' || r === 'W' ? -1 : 1;
-  return Math.abs(value) * sign;
+  return Math.abs(dec) * sign;
+}
+
+/** Pull GPS lat/lng out of an EXIF-like record, if both are present. */
+function gpsFromExif(exif: Record<string, unknown>): { lat: number; lng: number } | null {
+  const lat = signedCoord(exif.GPSLatitude, exif.GPSLatitudeRef);
+  const lng = signedCoord(exif.GPSLongitude, exif.GPSLongitudeRef);
+  return lat != null && lng != null ? { lat, lng } : null;
 }
 
 /** Opens the photo picker and returns each selected photo with its metadata. */
-export async function pickAndReadPhotos(): Promise<PickedPhoto[]> {
+export async function pickAndReadPhotos(): Promise<PickOutcome> {
   const picker = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!picker.granted) {
     throw new Error('Kein Zugriff auf Fotos erlaubt.');
   }
   // MediaLibrary permission unlocks getAssetInfoAsync().location (needs
-  // ACCESS_MEDIA_LOCATION on Android, declared in app.json).
+  // ACCESS_MEDIA_LOCATION on Android, declared in app.json). On Android this is
+  // the reliable source for the embedded GPS — picker EXIF is often stripped.
   const lib = await MediaLibrary.requestPermissionsAsync();
 
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -43,8 +93,17 @@ export async function pickAndReadPhotos(): Promise<PickedPhoto[]> {
     exif: true,
     quality: 1,
   });
-  if (result.canceled) return [];
 
+  const empty: PickDiagnostics = {
+    total: 0,
+    withGps: 0,
+    withTime: 0,
+    assetIdMissing: 0,
+    mediaLibraryGranted: lib.granted,
+  };
+  if (result.canceled) return { photos: [], diagnostics: empty };
+
+  let assetIdMissing = 0;
   const out: PickedPhoto[] = [];
   for (const asset of result.assets) {
     let lat: number | null = null;
@@ -54,21 +113,30 @@ export async function pickAndReadPhotos(): Promise<PickedPhoto[]> {
     const exif = asset.exif as Record<string, unknown> | undefined;
     if (exif) {
       takenAt = exifDateToIso((exif.DateTimeOriginal as string) ?? (exif.DateTime as string) ?? null);
-      const gpsLat = signedCoord(exif.GPSLatitude, exif.GPSLatitudeRef);
-      const gpsLng = signedCoord(exif.GPSLongitude, exif.GPSLongitudeRef);
-      if (gpsLat != null && gpsLng != null) {
-        lat = gpsLat;
-        lng = gpsLng;
+      const gps = gpsFromExif(exif);
+      if (gps) {
+        lat = gps.lat;
+        lng = gps.lng;
       }
     }
 
-    // Prefer MediaLibrary's structured location/time when available.
+    if (!asset.assetId) assetIdMissing++;
+
+    // The structured MediaLibrary record is the reliable Android source for the
+    // embedded location and capture time — query it whenever anything is missing.
     if ((lat == null || lng == null || takenAt == null) && asset.assetId && lib.granted) {
       try {
-        const info = await MediaLibrary.getAssetInfoAsync(asset.assetId);
-        if (info.location) {
+        const info = await MediaLibrary.getAssetInfoAsync(asset.assetId, { shouldDownloadFromNetwork: true });
+        if ((lat == null || lng == null) && info.location) {
           lat = info.location.latitude;
           lng = info.location.longitude;
+        }
+        if ((lat == null || lng == null) && info.exif) {
+          const gps = gpsFromExif(info.exif as Record<string, unknown>);
+          if (gps) {
+            lat = gps.lat;
+            lng = gps.lng;
+          }
         }
         if (!takenAt && info.creationTime) takenAt = new Date(info.creationTime).toISOString();
       } catch {
@@ -78,5 +146,13 @@ export async function pickAndReadPhotos(): Promise<PickedPhoto[]> {
 
     out.push({ id: asset.assetId ?? asset.uri, uri: asset.uri, lat, lng, takenAt });
   }
-  return out;
+
+  const diagnostics: PickDiagnostics = {
+    total: out.length,
+    withGps: out.filter((p) => p.lat != null && p.lng != null).length,
+    withTime: out.filter((p) => p.takenAt != null).length,
+    assetIdMissing,
+    mediaLibraryGranted: lib.granted,
+  };
+  return { photos: out, diagnostics };
 }
