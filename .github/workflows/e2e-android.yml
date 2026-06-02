@@ -48,9 +48,9 @@ jobs:
       # the workflow changed): restore the prebuilt APK keyed on a hash of
       # everything that affects it. Cached even if a later step fails, so
       # emulator/Maestro iterations don't rebuild.
-      - name: Cache built APK
+      - name: Restore built APK
         id: apk-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: android/app/build/outputs/apk/release/app-release.apk
           key: apk-x86_64-${{ hashFiles('package-lock.json', 'app.json', 'metro.config.js', 'src/**', 'assets/**') }}
@@ -67,6 +67,15 @@ jobs:
         run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -x lintVitalRelease --build-cache 2>&1 | tee ../android-build.log
         working-directory: android
 
+      # Save right after a successful build so the APK is cached even when a
+      # later step (emulator/Maestro) fails — avoids rebuilding every iteration.
+      - name: Save built APK
+        if: steps.apk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: android/app/build/outputs/apk/release/app-release.apk
+          key: apk-x86_64-${{ hashFiles('package-lock.json', 'app.json', 'metro.config.js', 'src/**', 'assets/**') }}
+
       - name: Install Maestro
         run: |
           { curl -fsSL "https://get.maestro.mobile.dev" | bash; } 2>&1 | tee maestro-install.log
@@ -78,8 +87,8 @@ jobs:
       - name: Run Maestro on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          target: google_apis
+          api-level: 34
+          target: aosp_atd
           arch: x86_64
           force-avd-creation: true
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
