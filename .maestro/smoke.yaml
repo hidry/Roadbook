@@ -2,7 +2,7 @@
 # Proves the NATIVE app builds, installs, launches and renders on an Android
 # emulator. No backend needed: with no stored session the app lands on the
 # login screen (same idea as the web smoke test).
-appId: de.artner.roadbook
+appId: de.hidry.roadbook
 ---
 - launchApp
 - assertVisible: "Roadbook"

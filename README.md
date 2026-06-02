@@ -339,7 +339,7 @@ jobs:
 
 Beim Verkauf wirst du datenschutzrechtlich **Verantwortlicher** für fremde Nutzerdaten. GPS-Standorte aus EXIF = personenbezogene Daten (Bewegungsprofile).
 
-- [ ] Datenschutzerklärung + Impressum (Rechtsform prüfen — **[ANNAHME]**: gewerblich über Artner oder privat)
+- [ ] Datenschutzerklärung + Impressum (Rechtsform prüfen — privates Projekt)
 - [ ] AVV (Auftragsverarbeitungsvertrag) mit Supabase **und** Cloudflare
 - [ ] EU-Datenresidenz wählen (Supabase Region: `eu-central-1` / Frankfurt)
 - [ ] Lösch- & Auskunfts-/Exportfunktion in der App (Betroffenenrechte)
