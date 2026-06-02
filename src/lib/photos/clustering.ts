@@ -10,10 +10,13 @@
  *    visit is a separate, chronological entry. Two visits of the same place are
  *    only split apart by a SIGNIFICANT stay elsewhere (an overnight / long stop)
  *    — a mere day excursion (hike, bike tour of any radius) does NOT split them.
- *  - STOP: a visit that is significant enough to deserve its own roadbook entry,
- *    i.e. an overnight stay OR a daytime dwell ≥ MIN_DAYTIME_DWELL_MS. Transient
- *    excursion visits are NOT stops; the caller attaches their photos to the
- *    surrounding stop (see suggestion.ts).
+ *  - STOP: a visit that deserves its own roadbook entry. A place is a stop when
+ *    you slept there — detected EITHER from its own photo span crossing a night
+ *    (evening + next morning) OR from a NIGHT GAP after it (a long pause until
+ *    the next photo), so a camp shot only once still counts — or it is a long
+ *    daytime destination (≥ MIN_DAYTIME_DWELL_MS), or the trip's start / end.
+ *    Transient excursion visits are NOT stops; the caller attaches their photos
+ *    to the surrounding stop (see suggestion.ts).
  */
 
 export interface GeoPoint {
@@ -95,11 +98,20 @@ export function clusterPhotos(points: GeoPoint[]): PlaceVisit[] {
   const runs = buildRuns(sorted, placeOf);
   const visits = buildVisits(runs, placeOf);
 
-  // Fallback: if photos are present but nothing is significant (e.g. a short
-  // day trip with only quick stops), don't return a stop-less route — promote
-  // every visit so the user still gets editable start/…/end entries.
   if (visits.length > 0 && !visits.some((v) => v.isStop)) {
+    // Fallback: photos are present but nothing is significant (e.g. a short day
+    // trip with only quick stops). Don't return a stop-less route — promote
+    // every visit so the user still gets editable start/…/end entries.
     for (const v of visits) v.isStop = true;
+  } else {
+    // Guarantee the trip's END is a stop: the final place (latest photo) has no
+    // following night gap, so (c) can't see it — but a camp shot only in the
+    // evening of the last night must still appear. Force the latest visit.
+    let lastVisit = visits[0];
+    for (const v of visits) {
+      if (Date.parse(v.departureDate) > Date.parse(lastVisit.departureDate)) lastVisit = v;
+    }
+    if (lastVisit) lastVisit.isStop = true;
   }
 
   return visits;
@@ -190,10 +202,24 @@ function buildVisits(runs: Run[], placeOf: Map<string, Place>): PlaceVisit[] {
     parent[find(a)] = find(b);
   };
 
-  const sigRun = runs.map((r) => isSignificant(r.startMs, r.endMs));
+  // A run is "stopworthy" — deserves its own stop — if any holds:
+  //  (a) its own photos span a night (evening + next-morning at the same place);
+  //  (b) it dwells long enough to be a daytime destination (>= MIN_DAYTIME_DWELL);
+  //  (c) a NIGHT GAP follows it: the pause until the next photo spans a night, so
+  //      the traveller slept here — this catches a camp shot only ONCE (e.g. just
+  //      in the evening), which (a)/(b) would miss.
+  // (c) is the key fix against over-merging: it no longer requires two photos at
+  // the same place to recognise an overnight stay. The trip's END (last photo,
+  // which has no following gap) is guaranteed separately in clusterPhotos.
+  const stopworthy = runs.map((r, i) => {
+    if (isSignificant(r.startMs, r.endMs)) return true; // (a) overnight or (b) dwell
+    if (i < runs.length - 1) return isOvernightSpan(r.endMs, runs[i + 1].startMs); // (c)
+    return false;
+  });
 
-  // For each place, merge its consecutive runs when nothing significant separates
-  // them (= a mere excursion was in between).
+  // For each place, merge its consecutive runs when no STOPWORTHY run separates
+  // them (= only excursions in between); a real overnight elsewhere keeps them
+  // as separate visits (round trip: same place twice).
   const byPlace = new Map<string, number[]>();
   runs.forEach((r, i) => {
     const list = byPlace.get(r.placeId) ?? [];
@@ -206,7 +232,7 @@ function buildVisits(runs: Run[], placeOf: Map<string, Place>): PlaceVisit[] {
       const b = idxs[k];
       let separated = false;
       for (let m = a + 1; m < b; m++) {
-        if (sigRun[m]) {
+        if (stopworthy[m]) {
           separated = true;
           break;
         }
@@ -215,21 +241,25 @@ function buildVisits(runs: Run[], placeOf: Map<string, Place>): PlaceVisit[] {
     }
   }
 
-  // Aggregate runs per visit root, preserving chronological photo order.
-  const groups = new Map<number, Run[]>();
-  runs.forEach((r, i) => {
+  // Aggregate run indices per visit root, preserving chronological order.
+  const groups = new Map<number, number[]>();
+  runs.forEach((_, i) => {
     const root = find(i);
     const list = groups.get(root) ?? [];
-    list.push(r);
+    list.push(i);
     groups.set(root, list);
   });
 
   const visits: PlaceVisit[] = [];
-  for (const group of groups.values()) {
+  for (const idxList of groups.values()) {
+    const group = idxList.map((i) => runs[i]);
     const photos = group.flatMap((r) => r.points);
     const startMs = Math.min(...group.map((r) => r.startMs));
     const endMs = Math.max(...group.map((r) => r.endMs));
     const place = placeOf.get(photos[0].id)!;
+    // A visit is a stop if any of its runs is stopworthy, or the merged span is
+    // itself significant (evening + next-morning split by a daytime excursion).
+    const isStop = idxList.some((i) => stopworthy[i]) || isSignificant(startMs, endMs);
     visits.push({
       placeId: place.id,
       visitIndex: 0, // assigned below
@@ -238,7 +268,7 @@ function buildVisits(runs: Run[], placeOf: Map<string, Place>): PlaceVisit[] {
       lng: place.lng,
       arrivalDate: new Date(startMs).toISOString(),
       departureDate: new Date(endMs).toISOString(),
-      isStop: isSignificant(startMs, endMs),
+      isStop,
     });
   }
 

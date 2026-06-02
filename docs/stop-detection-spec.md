@@ -4,10 +4,14 @@
 > (Tests: `__tests__/clustering.test.ts`, `__tests__/suggestion.test.ts`).
 > Bezug: README §4 ("Route aus Foto-Metadaten"), Stopp-Typen `campingplatz | stellplatz | freistehend`.
 >
-> Bekannte MVP-Grenze: Die Trenner-Signifikanz beim Besuchs-Split wird je
-> *Run* ausgewertet (ein Durchlauf, kein Fixpunkt). Im seltenen Fall einer
-> Rundreise mit einem nur einmalig fotografierten Übernacht-Zwischenort kann ein
-> Ort statt zweimal nur einmal erscheinen — über die Editier-UI korrigierbar.
+> Übernachtungen werden über die **Nachtlücke** im Zeitverlauf erkannt (Schritt
+> 2c), nicht über „zwei Fotos am selben Ort" — so kollabieren Routen nicht mehr
+> zu einem Stopp, wenn nur ein Teil der Plätze abends+morgens fotografiert wurde.
+>
+> Bekannte MVP-Grenze: Wenn das *letzte* Foto eines Tages ausnahmsweise am
+> Ausflugsziel (statt am Camp) entsteht und danach nur noch woanders fotografiert
+> wird, kann die Nachtlücke am Ausflugsziel verankert werden. Selten, über die
+> Editier-UI korrigierbar.
 
 ## 1. Ziel & Domänen-Annahme
 
@@ -76,19 +80,30 @@ Alle Fotos eines Orts zusammenfassen, **Zeit ignorieren**. Greedy/Union-Find:
 zwei Fotos gehören zum selben Ort, wenn ihr Abstand < `PLACE_RADIUS_M` (Start:
 500 m). (Saubere Variante später: einfache Single-Link-Agglomeration.)
 
-### Schritt 2 — Signifikanz je Ort *(je Besuch ausgewertet)*
+### Schritt 2 — Signifikanz je Besuch
 Ein Besuch eines Orts ist **stopp-fähig**, wenn mindestens eines gilt:
-- **Übernachtung:** die Fotos des Besuchs spannen eine Nachtgrenze (Spanne über
-  Nacht) — *immer* ein Stopp, unabhängig von der Dauer, **oder**
-- **Tages-Verweildauer:** Zeitspanne (spätestes − frühestes Foto des Besuchs)
-  ≥ `MIN_DAYTIME_DWELL_MIN` (Start: **180 min ≈ 3 h**) — befördert echte
-  Tagesziele (Stadt-, Strandtag) zum Stopp, **oder**
-- **Wiederkehr:** der Ort hat ≥ 2 Besuche (siehe Schritt 3).
+- **(a) Übernachtung im eigenen Span:** die Fotos des Besuchs spannen eine
+  Nachtgrenze (Abend + nächster Morgen am selben Ort) — *immer* ein Stopp,
+  dauerunabhängig, **oder**
+- **(b) Tages-Verweildauer** ≥ `MIN_DAYTIME_DWELL_MIN` (Start: **180 min ≈ 3 h**)
+  — befördert echte Tagesziele (Stadt-, Strandtag) zum Stopp, **oder**
+- **(c) Nachtlücke danach:** zwischen dem letzten Foto dieses Orts und dem
+  nächsten Foto liegt eine **lange Nachtpause** (≥6 h, die das Nachtfenster
+  berührt) → dort wurde geschlafen. **Das ist der entscheidende Punkt:** ein
+  Camp wird so auch erkannt, wenn nur **einmal** (z. B. nur abends) fotografiert
+  wurde — (a)/(b) würden es verpassen, **oder**
+- **(d) Wiederkehr:** der Ort hat ≥ 2 Besuche (siehe Schritt 3).
 
-> **Designentscheidung:** Übernachtung = sicherer Stopp; ein reiner Tagesort
-> wird nur ab ~3 h zum Stopp. Das hält kurze Ausflüge (Wanderung, Picknick,
-> Mittagspause, Fährwarten) aus der Stopp-Liste heraus und vermeidet die
-> Brüchigkeit einer niedrigen 90-Min-Schwelle.
+Zusätzlich ist das **Reise-Ende** garantiert ein Stopp: das allerletzte Foto hat
+keine nachfolgende Nachtlücke, also kann (c) es nicht sehen — der Besuch mit dem
+spätesten Foto wird daher direkt zum Stopp erklärt. (Der *erste* Camp braucht
+keine Sonderregel: (c) erkennt ihn über die Nachtlücke zum nächsten Tag; ein
+echter Ausflug *vor* dem ersten Camp bleibt dagegen Anhang, wie entschieden.)
+
+> **Designentscheidung:** „Geschlafen = Stopp" ist das robuste Leitsignal, und
+> es wird über die **Zeitlücke** erkannt, nicht über „zwei Fotos am selben Ort".
+> Ein reiner Tagesort wird nur ab ~3 h zum Stopp; das hält kurze Ausflüge
+> (Wanderung, Picknick, Mittagspause, Fährwarten) aus der Stopp-Liste heraus.
 
 Nicht stopp-fähige Besuche = **Durchgangs-/Ausflugspunkte** → kein eigener
 Stopp; ihre Fotos werden in Schritt 5 angehängt.
@@ -199,7 +214,10 @@ umgebenden Stopps. `unassignedPhotoIds` enthält nur noch Fotos ohne GPS/Zeit.
    → **zwei** Stopps (Stadt + Camp); Stadt-Fotos liegen am Stadt-Stopp.
 9. **Kurzer Tages-Halt < 3 h** (Mittagspause 1 h zwischen zwei Camps) → **kein**
    eigener Stopp; Fotos als Anhang am vorausgehenden/umgebenden Stopp.
-10. **Fotos ohne GPS** → `unassignedPhotoIds`. *(bestehend in suggestion)*
+10. **„Gemischtes" Foto-Muster** (mehrere Camps, nur eines abends+morgens, der
+    Rest nur einmal, dazu eine Tageswanderung) → **alle Camps** als Stopps (über
+    die Nachtlücke 2c), Wanderung als Anhang. *Regression: vorher 1 Stopp.*
+11. **Fotos ohne GPS** → `unassignedPhotoIds`. *(bestehend in suggestion)*
 11. **Reihenfolge** unabhängig von Eingabereihenfolge; `arrivalDate` = frühestes
     Foto. *(bestehend)*
 
