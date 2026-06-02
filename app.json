@@ -11,14 +11,14 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": true,
-      "bundleIdentifier": "de.artner.roadbook",
+      "bundleIdentifier": "de.hidry.roadbook",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Roadbook liest die GPS- und Zeit-Metadaten der ausgewählten Fotos, um daraus deine Reiseroute vorzuschlagen.",
         "NSLocationWhenInUseUsageDescription": "Wird für die Kartenansicht deiner Reise verwendet."
       }
     },
     "android": {
-      "package": "de.artner.roadbook",
+      "package": "de.hidry.roadbook",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
