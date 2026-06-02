@@ -1,0 +1,49 @@
+name: EAS build (Android)
+
+# Kicks off a CLOUD EAS build of a standalone, internal-distribution Android
+# build you can install straight on a phone — no local Node/Metro/.env needed.
+#
+# The app's Supabase config does NOT come from a local .env here: it comes from
+# EAS environment variables scoped to the build profile's environment (see the
+# "environment" field per profile in eas.json). For the default `preview`
+# profile set these on https://expo.dev (Project → Environment Variables,
+# environment = preview), as plain EXPO_PUBLIC_* values (they ship in the client
+# bundle and are protected by Supabase RLS, not by secrecy):
+#   EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY
+#   (optional: EXPO_PUBLIC_MAP_STYLE_URL — leave unset for a blank basemap)
+#
+# The actual compile runs on EAS servers; this job only authenticates (via the
+# EXPO_TOKEN repo secret) and submits the build, then returns. The finished
+# APK/AAB appears on expo.dev (and EAS emails you) when the build completes.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        type: choice
+        options: [preview, production]
+        default: preview
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Submit EAS build (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      # --no-wait returns as soon as the build is queued (the compile runs on
+      # EAS), so we don't burn CI minutes idling. The command prints the build
+      # page URL; watch it / install from there.
+      - name: Submit build to EAS
+        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --no-wait
