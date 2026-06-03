@@ -43,19 +43,20 @@ const REAL_TIMESTAMPS: { id: string; takenAt: string }[] = [
   { id: 'p20', takenAt: '2026-05-24T08:16:05.000Z' }, // 0155f3c5
 ];
 
-// ── Synthetic place coordinates (each day ~100 km from the previous) ─────────
-// These simulate a moving multi-day camper trip. Replace with real GPS once
-// the device EXIF can be read (see docs/debugging.md).
+// ── GPS coordinates ────────────────────────────────────────────────────────────
+// PLACE_H (May 22) is confirmed from the device EXIF: Via alla Foce 14, 6933
+// Muzzano, Schweiz (near Lugano/Ticino). The others are synthetic (~100 km
+// apart) pending a full EXIF export from the device.
 
-const PLACE_A = { lat: 47.0, lng: 10.0 }; // May 14 campsite
-const PLACE_B = { lat: 47.8, lng: 11.0 }; // May 15 campsite  (~100 km N)
-const PLACE_C = { lat: 48.4, lng: 11.8 }; // May 16 campsite
-const PLACE_D = { lat: 48.5, lng: 12.9 }; // May 17 campsite
-const PLACE_E = { lat: 48.2, lng: 14.0 }; // May 19 campsite (no May 18 photos)
-const PLACE_F = { lat: 47.8, lng: 15.2 }; // May 20 campsite
-const PLACE_G = { lat: 47.1, lng: 14.7 }; // May 21 campsite
-const PLACE_H = { lat: 46.6, lng: 13.5 }; // May 22 campsite
-const PLACE_I = { lat: 47.2, lng: 13.1 }; // May 23–24 campsite (last night)
+const PLACE_A = { lat: 47.0, lng:  9.8 }; // May 14 campsite (synthetic)
+const PLACE_B = { lat: 47.5, lng: 10.9 }; // May 15 campsite (synthetic, ~100 km)
+const PLACE_C = { lat: 46.8, lng: 11.9 }; // May 16 campsite (synthetic)
+const PLACE_D = { lat: 46.2, lng: 12.8 }; // May 17 campsite (synthetic)
+const PLACE_E = { lat: 45.7, lng: 12.2 }; // May 19 campsite (synthetic)
+const PLACE_F = { lat: 45.9, lng: 11.1 }; // May 20 campsite (synthetic)
+const PLACE_G = { lat: 46.4, lng: 10.3 }; // May 21 campsite (synthetic)
+const PLACE_H = { lat: 45.969, lng: 8.918 }; // May 22 – confirmed: Muzzano (Lugano)
+const PLACE_I = { lat: 46.2, lng:  9.0 }; // May 23–24 campsite (synthetic)
 
 /** Assign each photo to a place based on its date. */
 function placeFor(id: string, takenAt: string): { lat: number; lng: number } {

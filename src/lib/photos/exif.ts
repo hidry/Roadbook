@@ -128,6 +128,11 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
       }
     }
 
+    // Clear picker-EXIF GPS when it is (0, 0) so the MediaLibrary fallback can
+    // still query the real embedded location. Samsung (and some other OEMs) write
+    // zeroes instead of omitting the GPS tag when location access is restricted.
+    if (lat === 0 && lng === 0) { lat = null; lng = null; }
+
     if (!asset.assetId) assetIdMissing++;
 
     // The structured MediaLibrary record is the reliable Android source for the
@@ -152,9 +157,7 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
       }
     }
 
-    // (0, 0) is the placeholder Android writes when ACCESS_MEDIA_LOCATION is
-    // denied or GPS hadn't locked — not a real coordinate. Treat it as no-GPS
-    // so these photos don't all cluster to the Gulf of Guinea.
+    // Final guard: if MediaLibrary also returned (0, 0), count and discard it.
     if (lat === 0 && lng === 0) {
       gpsZero++;
       lat = null;
