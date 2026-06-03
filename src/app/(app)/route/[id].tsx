@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { routeRepo, stopRepo } from '@/lib/db/repositories';
+import { syncNow } from '@/lib/sync/syncEngine';
 import type { Route, Stop, StopType } from '@/types/models';
 
 const TYPE_LABEL: Record<StopType, string> = {
@@ -16,6 +17,10 @@ const TYPE_LABEL: Record<StopType, string> = {
   stellplatz: 'Stellplatz',
   freistehend: 'Freistehend',
 };
+
+function syncAfterWrite() {
+  syncNow().catch((e) => console.warn('[sync] post-write:', e instanceof Error ? e.message : e));
+}
 
 export default function RouteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -48,6 +53,7 @@ export default function RouteScreen() {
     await stopRepo.create({ routeId: id, position, role, name: trimmed, lat: 0, lng: 0 });
     setName('');
     await load();
+    syncAfterWrite();
   }
 
   function confirmDelete(stop: Stop) {
@@ -59,6 +65,7 @@ export default function RouteScreen() {
         onPress: async () => {
           await stopRepo.remove(stop.id);
           await load();
+          syncAfterWrite();
         },
       },
     ]);
@@ -69,6 +76,7 @@ export default function RouteScreen() {
     if (!trimmed || trimmed === route?.title) return;
     await routeRepo.update(id, { title: trimmed });
     setRoute((r) => (r ? { ...r, title: trimmed } : r));
+    syncAfterWrite();
   }
 
   async function handleDragEnd({ data }: { data: Stop[] }) {
@@ -77,6 +85,7 @@ export default function RouteScreen() {
     for (const s of reordered) {
       await stopRepo.update(s.id, { position: s.position });
     }
+    syncAfterWrite();
   }
 
   const located = stops.filter((s) => s.lat !== 0 || s.lng !== 0);

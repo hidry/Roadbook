@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { photoRepo, routeRepo, stopRepo } from '@/lib/db/repositories';
+import { syncNow } from '@/lib/sync/syncEngine';
 import { clearLog, readLog } from '@/lib/debug-log';
 import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib/geocoding';
 import { compressPhoto } from '@/lib/photos/compress';
@@ -154,6 +155,7 @@ export default function ImportScreen() {
           void uploadInBackground(photo.id, meta.uri);
         }
       }
+      syncNow().catch((e) => console.warn('[sync] post-import:', e instanceof Error ? e.message : e));
       router.replace({ pathname: '/route/[id]', params: { id: route.id } });
     } catch (e) {
       setPhase('review');

@@ -7,6 +7,7 @@ import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { photoRepo, stopRepo } from '@/lib/db/repositories';
+import { syncNow } from '@/lib/sync/syncEngine';
 import type { Photo, Stop, StopRole, StopType } from '@/types/models';
 
 const TYPES: { value: StopType; label: string }[] = [
@@ -71,6 +72,7 @@ export default function StopScreen() {
       arrivalDate: arrival.trim() || null,
       notes: notes.trim() || null,
     });
+    syncNow().catch((e) => console.warn('[sync] post-write:', e instanceof Error ? e.message : e));
     setSaving(false);
     router.back();
   }
