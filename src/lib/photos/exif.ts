@@ -70,6 +70,17 @@ async function findAssetByFilename(
 ): Promise<AssetInfo | null> {
   if (!fileName && !takenAt) return null;
   try {
+    // Samsung Photo Picker sets DISPLAY_NAME to the MediaStore _ID
+    // (e.g. "1000018540.jpg"). Detect this and call getAssetInfoAsync directly
+    // with the numeric ID — no library scan needed.
+    const numericId = fileName ? /^(\d+)\.[^.]+$/.exec(fileName)?.[1] : null;
+    if (numericId) {
+      const info = await getAssetInfoAsync(numericId);
+      logLine('EXIF', 'getAssetInfoAsync by numericId from fileName', { numericId, hasLocation: !!info?.location });
+      return info;
+    }
+
+    // Fallback: search by exact filename within a ±14 h window.
     const opts: Parameters<typeof getAssetsAsync>[0] = {
       mediaType: 'photo',
       first: 500,
@@ -147,12 +158,12 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
       }
     }
 
-    const exifGpsSource = lat != null ? 'picker-exif' : null;
-
     // Clear picker-EXIF GPS when it is (0, 0) so the MediaLibrary fallback can
     // still query the real embedded location. Samsung (and some other OEMs) write
     // zeroes instead of omitting the GPS tag when location access is restricted.
     if (lat === 0 && lng === 0) { lat = null; lng = null; }
+
+    const exifGpsSource = lat != null ? 'picker-exif' : null;
 
     if (!asset.assetId) assetIdMissing++;
 
