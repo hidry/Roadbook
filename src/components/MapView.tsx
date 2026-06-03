@@ -24,11 +24,13 @@ const BLANK_STYLE: StyleSpecification = {
 const styleUrl = process.env.EXPO_PUBLIC_MAP_STYLE_URL;
 const mapStyle: string | StyleSpecification = styleUrl && styleUrl.length > 0 ? styleUrl : BLANK_STYLE;
 
-function center(stops: Stop[]): [number, number] {
-  if (stops.length === 0) return [10.0, 51.0]; // central Europe fallback
-  const lng = stops.reduce((s, p) => s + p.lng, 0) / stops.length;
-  const lat = stops.reduce((s, p) => s + p.lat, 0) / stops.length;
-  return [lng, lat];
+const MAP_PADDING = { top: 50, right: 50, bottom: 50, left: 50 };
+
+/** [west, south, east, north] bounding box for a set of stops. */
+function boundsOf(stops: Stop[]): [number, number, number, number] {
+  const lngs = stops.map((s) => s.lng);
+  const lats = stops.map((s) => s.lat);
+  return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
 }
 
 export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
@@ -47,7 +49,13 @@ export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
   return (
     <View style={[styles.container, style]}>
       <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle}>
-        <Camera zoom={stops.length ? 6 : 3} center={center(stops)} />
+        {stops.length >= 2 ? (
+          <Camera bounds={boundsOf(ordered)} padding={MAP_PADDING} />
+        ) : stops.length === 1 ? (
+          <Camera zoom={10} center={[stops[0].lng, stops[0].lat]} />
+        ) : (
+          <Camera zoom={3} center={[10.0, 51.0]} />
+        )}
 
         {lineCoords.length >= 2 ? (
           <GeoJSONSource
@@ -71,8 +79,38 @@ export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
   );
 }
 
+export function StopMap({ stop, style }: { stop: Stop; style?: object }) {
+  if (Platform.OS === 'web') {
+    return (
+      <View style={[styles.placeholder, styles.stopMapSize, style]}>
+        <ThemedText type="small">Karte auf Gerät verfügbar.</ThemedText>
+      </View>
+    );
+  }
+
+  if (stop.lat === 0 && stop.lng === 0) {
+    return (
+      <View style={[styles.placeholder, styles.stopMapSize, style]}>
+        <ThemedText type="small">Keine Koordinaten gesetzt.</ThemedText>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, styles.stopMapSize, style]}>
+      <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle}>
+        <Camera zoom={12} center={[stop.lng, stop.lat]} />
+        <Marker lngLat={[stop.lng, stop.lat]}>
+          <View style={[styles.dot, stop.role === 'start' && styles.start, stop.role === 'end' && styles.end]} />
+        </Marker>
+      </Map>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { height: 240, borderRadius: 16, overflow: 'hidden', backgroundColor: '#dfe7ef' },
+  stopMapSize: { height: 180 },
   placeholder: {
     height: 240,
     borderRadius: 16,
