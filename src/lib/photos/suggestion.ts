@@ -42,9 +42,19 @@ export interface SuggestedStop {
   visitIndex: number;
 }
 
+/** Intermediate clustering counts — shown in the review UI so the user can
+ *  diagnose "why only N stops?" without needing a dev build. */
+export interface ClusterDiagnostics {
+  photosWithGeo: number;
+  placesFound: number;
+  visitsFound: number;
+  stopsFound: number;
+}
+
 export interface RouteSuggestion {
   stops: SuggestedStop[];
   unassignedPhotoIds: string[];
+  clusterDiagnostics: ClusterDiagnostics;
 }
 
 function hasGeo(p: PhotoMeta): p is PhotoMeta & GeoPoint {
@@ -83,7 +93,17 @@ export function suggestRoute(photos: PhotoMeta[]): RouteSuggestion {
     else unassignedPhotoIds.push(...exc.photoIds);
   }
 
-  return { stops, unassignedPhotoIds };
+  const placesFound = new Set(visits.map((v) => v.placeId)).size;
+  return {
+    stops,
+    unassignedPhotoIds,
+    clusterDiagnostics: {
+      photosWithGeo: geo.length,
+      placesFound,
+      visitsFound: visits.length,
+      stopsFound: stopVisits.length,
+    },
+  };
 }
 
 /**

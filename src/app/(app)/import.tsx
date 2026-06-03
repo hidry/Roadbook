@@ -16,7 +16,7 @@ import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib
 import { compressPhoto } from '@/lib/photos/compress';
 import { pickAndReadPhotos, type PickedPhoto } from '@/lib/photos/exif';
 import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
-import { suggestRoute, type SuggestedStop } from '@/lib/photos/suggestion';
+import { suggestRoute, type ClusterDiagnostics, type SuggestedStop } from '@/lib/photos/suggestion';
 import type { StopType } from '@/types/models';
 
 type Phase = 'idle' | 'reading' | 'geocoding' | 'review' | 'saving';
@@ -37,6 +37,7 @@ export default function ImportScreen() {
   const [title, setTitle] = useState('');
   const [stops, setStops] = useState<SuggestedStop[]>([]);
   const [unassigned, setUnassigned] = useState<string[]>([]);
+  const [clusterDiag, setClusterDiag] = useState<ClusterDiagnostics | null>(null);
   const [metaById, setMetaById] = useState<Record<string, PickedPhoto>>({});
 
   async function pick() {
@@ -73,6 +74,7 @@ export default function ImportScreen() {
 
       const suggestion = suggestRoute(photos);
       setUnassigned(suggestion.unassignedPhotoIds);
+      setClusterDiag(suggestion.clusterDiagnostics);
 
       // Reverse-geocode each stop centroid (throttled + retried inside the geocoder).
       setPhase('geocoding');
@@ -185,6 +187,12 @@ export default function ImportScreen() {
         <>
           <Card>
             <TextField label="Titel der Route" value={title} onChangeText={setTitle} />
+            {clusterDiag ? (
+              <ThemedText type="small" style={styles.diag}>
+                {clusterDiag.photosWithGeo} Fotos mit GPS → {clusterDiag.placesFound} Ort(e) →{' '}
+                {clusterDiag.visitsFound} Visit(s) → {clusterDiag.stopsFound} Stopp(s) erkannt
+              </ThemedText>
+            ) : null}
           </Card>
 
           {stops.map((s, i) => (
@@ -242,4 +250,5 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: Spacing.two },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   typeBtn: { paddingVertical: Spacing.two, paddingHorizontal: Spacing.three, alignSelf: 'flex-start' },
+  diag: { opacity: 0.6 },
 });
