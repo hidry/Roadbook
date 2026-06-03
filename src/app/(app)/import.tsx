@@ -6,7 +6,7 @@
  */
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
@@ -50,10 +50,9 @@ export default function ImportScreen() {
         setPhase('idle');
         return;
       }
-      // No GPS at all → the route can't be built. Surface WHY so the user can
-      // fix it (usually Android's "limited" photo access stripping location).
+      // No GPS → surface WHY (usually Android "limited" access) but still proceed
+      // to review so the user can see the diagnostic line and save isn't silently lost.
       if (diagnostics.withGps === 0) {
-        setPhase('idle');
         const zeroHint =
           diagnostics.gpsZero > 0
             ? `\n• GPS-Nullkoordinaten (0°/0°) herausgefiltert: ${diagnostics.gpsZero}/${diagnostics.total} – Android schreibt dies, wenn der Medienstandort-Zugriff fehlt oder der GPS-Empfang beim Aufnehmen nicht aktiv war.`
@@ -68,7 +67,7 @@ export default function ImportScreen() {
             `\n\nTipp: Einstellungen → Apps → Roadbook → Berechtigungen → „Fotos und Medien" auf „Alle zulassen" ` +
             `stellen (nicht „Auswählen"), damit der eingebettete Standort lesbar ist.`,
         );
-        return;
+        // fall through — review shows "0 Stopps erkannt" and save stays disabled
       }
       const map: Record<string, PickedPhoto> = {};
       photos.forEach((p) => (map[p.id] = p));
@@ -181,6 +180,7 @@ export default function ImportScreen() {
         <View style={styles.logModal}>
           <View style={styles.logHeader}>
             <Button title="Schließen" variant="secondary" onPress={() => setLogText(null)} />
+            <Button title="Teilen" variant="secondary" onPress={() => Share.share({ message: logText ?? '' })} />
             <Button title="Löschen" variant="secondary" onPress={deleteLog} />
           </View>
           <ScrollView style={styles.logScroll}>
