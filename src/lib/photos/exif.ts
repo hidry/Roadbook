@@ -3,16 +3,22 @@
  * for multi-select and MediaLibrary.getAssetInfoAsync() for reliable GPS/time
  * (README §3). On Android, GPS in photo metadata requires ACCESS_MEDIA_LOCATION
  * (declared in app.json AND granted at runtime) — otherwise location is empty.
- * The structured MediaLibrary location is the reliable source; picker EXIF is a
- * fallback and varies by platform (numbers, "num/den" rationals or DMS arrays).
  *
- * Native module wrapper — not unit-tested; the parsing it relies on lives in the
- * pure `exif-date.ts` (which is tested).
+ * The Android 13+ Photo Picker (PICK_VISUAL_MEDIA) strips GPS from returned
+ * images and does NOT populate asset.assetId. We work around both problems:
+ *   1. GPS stripped from picker EXIF → clear (0,0) so the MediaLibrary path runs.
+ *   2. No assetId → extract numeric MediaStore ID from the asset URI so we can
+ *      still call getAssetInfoAsync(), which reads location via ExifInterface +
+ *      ACCESS_MEDIA_LOCATION.
+ *
+ * Native module wrapper — not unit-tested; the pure GPS parsing it relies on
+ * lives in `exif-gps.ts` (which is tested), and timestamps in `exif-date.ts`.
  */
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 
 import { exifDateToIso } from './exif-date';
+import { gpsFromExif } from './exif-gps';
 
 export interface PickedPhoto {
   id: string;
@@ -43,43 +49,17 @@ export interface PickOutcome {
   diagnostics: PickDiagnostics;
 }
 
-/** Parse one EXIF coordinate component into a decimal number. */
-function rationalToNumber(v: unknown): number | null {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v === 'string') {
-    if (v.includes('/')) {
-      const [a, b] = v.split('/').map(Number);
-      return b ? a / b : null;
-    }
-    const n = parseFloat(v.replace(',', '.'));
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-/** Coordinate may arrive as a decimal, a string, or a [deg, min, sec] array. */
-function toDecimal(value: unknown): number | null {
-  if (Array.isArray(value)) {
-    const [d = 0, m = 0, s = 0] = value.map(rationalToNumber).map((n) => n ?? 0);
-    const dec = d + m / 60 + s / 3600;
-    return Number.isFinite(dec) ? dec : null;
-  }
-  return rationalToNumber(value);
-}
-
-function signedCoord(value: unknown, ref: unknown): number | null {
-  const dec = toDecimal(value);
-  if (dec == null) return null;
-  const r = typeof ref === 'string' ? ref.toUpperCase() : '';
-  const sign = r === 'S' || r === 'W' ? -1 : 1;
-  return Math.abs(dec) * sign;
-}
-
-/** Pull GPS lat/lng out of an EXIF-like record, if both are present. */
-function gpsFromExif(exif: Record<string, unknown>): { lat: number; lng: number } | null {
-  const lat = signedCoord(exif.GPSLatitude, exif.GPSLatitudeRef);
-  const lng = signedCoord(exif.GPSLongitude, exif.GPSLongitudeRef);
-  return lat != null && lng != null ? { lat, lng } : null;
+/**
+ * Extract a numeric MediaStore ID from an Android photo URI so we can call
+ * getAssetInfoAsync() even when the Photo Picker didn't set asset.assetId.
+ *
+ * Works for both picker URI formats:
+ *   Android 13+ Photo Picker: content://media/picker/…/media/{id}
+ *   Legacy gallery:           content://media/external/images/media/{id}
+ */
+function mediaStoreIdFromUri(uri: string): string | null {
+  const m = /\/media\/(\d+)(?:[?/]|$)/.exec(uri);
+  return m?.[1] ?? null;
 }
 
 /** Opens the photo picker and returns each selected photo with its metadata. */
@@ -135,11 +115,17 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
 
     if (!asset.assetId) assetIdMissing++;
 
+    // Derive the MediaStore ID from the asset URI when the picker didn't expose
+    // it directly (Android 13+ Photo Picker omits assetId). With the ID we can
+    // call getAssetInfoAsync() which reads the embedded location via
+    // ExifInterface + ACCESS_MEDIA_LOCATION, bypassing the picker's GPS strip.
+    const effectiveId = asset.assetId ?? mediaStoreIdFromUri(asset.uri);
+
     // The structured MediaLibrary record is the reliable Android source for the
     // embedded location and capture time — query it whenever anything is missing.
-    if ((lat == null || lng == null || takenAt == null) && asset.assetId && lib.granted) {
+    if ((lat == null || lng == null || takenAt == null) && effectiveId && lib.granted) {
       try {
-        const info = await MediaLibrary.getAssetInfoAsync(asset.assetId, { shouldDownloadFromNetwork: true });
+        const info = await MediaLibrary.getAssetInfoAsync(effectiveId, { shouldDownloadFromNetwork: true });
         if ((lat == null || lng == null) && info.location) {
           lat = info.location.latitude;
           lng = info.location.longitude;
