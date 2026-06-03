@@ -1,6 +1,8 @@
+import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from 'react-native-draggable-flatlist';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RouteMap } from '@/components/MapView';
 import { ThemedText } from '@/components/themed-text';
@@ -18,6 +20,8 @@ const TYPE_LABEL: Record<StopType, string> = {
 export default function RouteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
   const [route, setRoute] = useState<Route | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [name, setName] = useState('');
@@ -38,7 +42,6 @@ export default function RouteScreen() {
     if (!trimmed) return;
     const position = stops.length;
     const role = position === 0 ? 'start' : 'stop';
-    // Manual stops start without coordinates (0,0); edit on the stop screen.
     await stopRepo.create({ routeId: id, position, role, name: trimmed, lat: 0, lng: 0 });
     setName('');
     await load();
@@ -58,48 +61,73 @@ export default function RouteScreen() {
     ]);
   }
 
+  async function handleDragEnd({ data }: { data: Stop[] }) {
+    const reordered = data.map((s, i) => ({ ...s, position: i }));
+    setStops(reordered);
+    for (const s of reordered) {
+      await stopRepo.update(s.id, { position: s.position });
+    }
+  }
+
   const located = stops.filter((s) => s.lat !== 0 || s.lng !== 0);
 
-  return (
-    <Screen>
+  const renderItem = ({ item: s, drag, isActive, getIndex }: RenderItemParams<Stop>) => {
+    const index = getIndex() ?? 0;
+    return (
+      <ScaleDecorator>
+        <Pressable
+          onPress={() => !isActive && router.push({ pathname: '/stop/[id]', params: { id: s.id } })}
+          onLongPress={() => !isActive && confirmDelete(s)}>
+          <Card style={[styles.stopCard, isActive && styles.activeCard]}>
+            <View style={styles.row}>
+              <Pressable onLongPress={drag} hitSlop={8} style={styles.handle}>
+                <ThemedText style={styles.handleIcon}>☰</ThemedText>
+              </Pressable>
+              <ThemedText type="smallBold">{index + 1}.</ThemedText>
+              <ThemedText type="default" style={styles.stopName}>
+                {s.name}
+              </ThemedText>
+              <ThemedText type="small">{roleLabel(s)}</ThemedText>
+            </View>
+            {s.type ? <ThemedText type="small">{TYPE_LABEL[s.type]}</ThemedText> : null}
+            {s.lat === 0 && s.lng === 0 ? (
+              <ThemedText type="small" style={styles.noGps}>
+                Keine Koordinaten – zum Setzen antippen
+              </ThemedText>
+            ) : null}
+          </Card>
+        </Pressable>
+      </ScaleDecorator>
+    );
+  };
+
+  const ListHeader = (
+    <>
       <Stack.Screen options={{ title: route?.title ?? 'Route' }} />
-
       <RouteMap stops={located} />
-
-      <Card>
+      <Card style={styles.headerCard}>
         <ThemedText type="smallBold">Stopp hinzufügen</ThemedText>
         <TextField placeholder="Name des Stopps" value={name} onChangeText={setName} onSubmitEditing={addStop} />
         <Button title="Hinzufügen" onPress={addStop} disabled={!name.trim()} />
       </Card>
+    </>
+  );
 
-      {stops.length === 0 ? (
-        <ThemedText type="small" style={styles.empty}>
-          Noch keine Stopps.
-        </ThemedText>
-      ) : (
-        stops.map((s, i) => (
-          <Pressable
-            key={s.id}
-            onPress={() => router.push({ pathname: '/stop/[id]', params: { id: s.id } })}
-            onLongPress={() => confirmDelete(s)}>
-            <Card>
-              <View style={styles.row}>
-                <ThemedText type="smallBold">{i + 1}.</ThemedText>
-                <ThemedText type="default" style={styles.stopName}>
-                  {s.name}
-                </ThemedText>
-                <ThemedText type="small">{roleLabel(s)}</ThemedText>
-              </View>
-              {s.type ? <ThemedText type="small">{TYPE_LABEL[s.type]}</ThemedText> : null}
-              {s.lat === 0 && s.lng === 0 ? (
-                <ThemedText type="small" style={styles.noGps}>
-                  Keine Koordinaten – zum Setzen antippen
-                </ThemedText>
-              ) : null}
-            </Card>
-          </Pressable>
-        ))
-      )}
+  return (
+    <Screen scroll={false}>
+      <DraggableFlatList
+        data={stops}
+        keyExtractor={(s) => s.id}
+        renderItem={renderItem}
+        onDragEnd={handleDragEnd}
+        ListHeaderComponent={ListHeader}
+        ListEmptyComponent={
+          <ThemedText type="small" style={styles.empty}>
+            Noch keine Stopps.
+          </ThemedText>
+        }
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + Spacing.three }]}
+      />
     </Screen>
   );
 }
@@ -111,8 +139,14 @@ function roleLabel(s: Stop): string {
 }
 
 const styles = StyleSheet.create({
+  list: { padding: Spacing.three, gap: Spacing.three },
+  headerCard: { marginBottom: Spacing.three },
+  stopCard: { marginBottom: Spacing.two },
+  activeCard: { opacity: 0.85, elevation: 6 },
   empty: { textAlign: 'center', paddingVertical: Spacing.four },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   stopName: { flex: 1 },
+  handle: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  handleIcon: { fontSize: 18, opacity: 0.5 },
   noGps: { color: '#E5484D' },
 });
