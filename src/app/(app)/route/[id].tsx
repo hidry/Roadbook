@@ -25,9 +25,12 @@ export default function RouteScreen() {
   const [route, setRoute] = useState<Route | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [name, setName] = useState('');
+  const [routeTitle, setRouteTitle] = useState('');
 
   const load = useCallback(async () => {
-    setRoute(await routeRepo.get(id));
+    const r = await routeRepo.get(id);
+    setRoute(r);
+    if (r) setRouteTitle(r.title);
     setStops(await stopRepo.listByRoute(id));
   }, [id]);
 
@@ -59,6 +62,13 @@ export default function RouteScreen() {
         },
       },
     ]);
+  }
+
+  async function saveTitle() {
+    const trimmed = routeTitle.trim();
+    if (!trimmed || trimmed === route?.title) return;
+    await routeRepo.update(id, { title: trimmed });
+    setRoute((r) => (r ? { ...r, title: trimmed } : r));
   }
 
   async function handleDragEnd({ data }: { data: Stop[] }) {
@@ -105,6 +115,15 @@ export default function RouteScreen() {
     <>
       <Stack.Screen options={{ title: route?.title ?? 'Route' }} />
       <RouteMap stops={located} />
+      <Card style={styles.headerCard}>
+        <TextField
+          label="Routentitel"
+          value={routeTitle}
+          onChangeText={setRouteTitle}
+          onBlur={saveTitle}
+          placeholder="Titel der Route"
+        />
+      </Card>
       <Card style={styles.headerCard}>
         <ThemedText type="smallBold">Stopp hinzufügen</ThemedText>
         <TextField placeholder="Name des Stopps" value={name} onChangeText={setName} onSubmitEditing={addStop} />
