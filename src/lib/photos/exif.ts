@@ -30,6 +30,12 @@ export interface PickDiagnostics {
   /** Photos the picker returned without a MediaLibrary id (limited access). */
   assetIdMissing: number;
   mediaLibraryGranted: boolean;
+  /**
+   * Photos whose GPS fields were exactly (0, 0) — the placeholder Android writes
+   * when ACCESS_MEDIA_LOCATION is denied or the GPS hadn't locked. Treated as
+   * "no GPS" so they don't cluster to the Gulf of Guinea.
+   */
+  gpsZero: number;
 }
 
 export interface PickOutcome {
@@ -100,10 +106,12 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
     withTime: 0,
     assetIdMissing: 0,
     mediaLibraryGranted: lib.granted,
+    gpsZero: 0,
   };
   if (result.canceled) return { photos: [], diagnostics: empty };
 
   let assetIdMissing = 0;
+  let gpsZero = 0;
   const out: PickedPhoto[] = [];
   for (const asset of result.assets) {
     let lat: number | null = null;
@@ -144,6 +152,15 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
       }
     }
 
+    // (0, 0) is the placeholder Android writes when ACCESS_MEDIA_LOCATION is
+    // denied or GPS hadn't locked — not a real coordinate. Treat it as no-GPS
+    // so these photos don't all cluster to the Gulf of Guinea.
+    if (lat === 0 && lng === 0) {
+      gpsZero++;
+      lat = null;
+      lng = null;
+    }
+
     out.push({ id: asset.assetId ?? asset.uri, uri: asset.uri, lat, lng, takenAt });
   }
 
@@ -153,6 +170,7 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
     withTime: out.filter((p) => p.takenAt != null).length,
     assetIdMissing,
     mediaLibraryGranted: lib.granted,
+    gpsZero,
   };
   return { photos: out, diagnostics };
 }

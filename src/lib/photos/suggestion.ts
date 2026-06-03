@@ -48,7 +48,7 @@ export interface RouteSuggestion {
 }
 
 function hasGeo(p: PhotoMeta): p is PhotoMeta & GeoPoint {
-  return p.lat != null && p.lng != null && !!p.takenAt;
+  return p.lat != null && p.lng != null && !!p.takenAt && (p.lat !== 0 || p.lng !== 0);
 }
 
 export function suggestRoute(photos: PhotoMeta[]): RouteSuggestion {

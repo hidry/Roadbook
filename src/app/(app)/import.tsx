@@ -51,13 +51,18 @@ export default function ImportScreen() {
       // fix it (usually Android's "limited" photo access stripping location).
       if (diagnostics.withGps === 0) {
         setPhase('idle');
+        const zeroHint =
+          diagnostics.gpsZero > 0
+            ? `\n• GPS-Nullkoordinaten (0°/0°) herausgefiltert: ${diagnostics.gpsZero}/${diagnostics.total} – Android schreibt dies, wenn der Medienstandort-Zugriff fehlt oder der GPS-Empfang beim Aufnehmen nicht aktiv war.`
+            : '';
         Alert.alert(
           'Keine GPS-Daten gefunden',
           `Aus ${diagnostics.total} Foto(s) konnte kein Standort gelesen werden.\n\n` +
             `• Foto-Standortzugriff: ${diagnostics.mediaLibraryGranted ? 'erlaubt' : 'NICHT erlaubt'}\n` +
             `• Fotos ohne Medien-ID: ${diagnostics.assetIdMissing}/${diagnostics.total}\n` +
-            `• Mit Aufnahmezeit: ${diagnostics.withTime}/${diagnostics.total}\n\n` +
-            `Tipp: Einstellungen → Apps → Roadbook → Berechtigungen → „Fotos und Medien" auf „Alle zulassen" ` +
+            `• Mit Aufnahmezeit: ${diagnostics.withTime}/${diagnostics.total}` +
+            zeroHint +
+            `\n\nTipp: Einstellungen → Apps → Roadbook → Berechtigungen → „Fotos und Medien" auf „Alle zulassen" ` +
             `stellen (nicht „Auswählen"), damit der eingebettete Standort lesbar ist.`,
         );
         return;
