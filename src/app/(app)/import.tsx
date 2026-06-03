@@ -6,12 +6,13 @@
  */
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { photoRepo, routeRepo, stopRepo } from '@/lib/db/repositories';
+import { clearLog, readLog } from '@/lib/debug-log';
 import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib/geocoding';
 import { compressPhoto } from '@/lib/photos/compress';
 import { pickAndReadPhotos, type PickedPhoto } from '@/lib/photos/exif';
@@ -39,6 +40,7 @@ export default function ImportScreen() {
   const [unassigned, setUnassigned] = useState<string[]>([]);
   const [clusterDiag, setClusterDiag] = useState<ClusterDiagnostics | null>(null);
   const [metaById, setMetaById] = useState<Record<string, PickedPhoto>>({});
+  const [logText, setLogText] = useState<string | null>(null);
 
   async function pick() {
     try {
@@ -160,9 +162,32 @@ export default function ImportScreen() {
     }
   }
 
+  async function showLog() {
+    const text = await readLog();
+    setLogText(text);
+  }
+
+  async function deleteLog() {
+    await clearLog();
+    setLogText(null);
+  }
+
   return (
     <Screen>
       <Stack.Screen options={{ title: 'Foto-Import' }} />
+
+      {/* Debug-Log modal */}
+      <Modal visible={logText !== null} animationType="slide" onRequestClose={() => setLogText(null)}>
+        <View style={styles.logModal}>
+          <View style={styles.logHeader}>
+            <Button title="Schließen" variant="secondary" onPress={() => setLogText(null)} />
+            <Button title="Löschen" variant="secondary" onPress={deleteLog} />
+          </View>
+          <ScrollView style={styles.logScroll}>
+            <ThemedText style={styles.logText}>{logText ?? ''}</ThemedText>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {phase === 'idle' ? (
         <Card>
@@ -171,6 +196,7 @@ export default function ImportScreen() {
             Wähle Fotos einer Reise. Aus GPS + Aufnahmezeit schlägt Roadbook Stopps vor – alles bleibt editierbar.
           </ThemedText>
           <Button title="📷 Fotos auswählen" onPress={pick} />
+          <Button title="Diagnose-Log" variant="secondary" onPress={showLog} />
         </Card>
       ) : null}
 
@@ -251,4 +277,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   typeBtn: { paddingVertical: Spacing.two, paddingHorizontal: Spacing.three, alignSelf: 'flex-start' },
   diag: { opacity: 0.6 },
+  logModal: { flex: 1, backgroundColor: '#000', paddingTop: 48 },
+  logHeader: { flexDirection: 'row', gap: Spacing.two, padding: Spacing.three },
+  logScroll: { flex: 1, padding: Spacing.three },
+  logText: { fontFamily: 'monospace', fontSize: 11, color: '#ccc' },
 });
