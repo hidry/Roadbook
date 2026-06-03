@@ -6,7 +6,7 @@
  */
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
@@ -181,6 +181,7 @@ export default function ImportScreen() {
         <View style={styles.logModal}>
           <View style={styles.logHeader}>
             <Button title="Schließen" variant="secondary" onPress={() => setLogText(null)} />
+            <Button title="Teilen" variant="secondary" onPress={() => Share.share({ message: logText ?? '' })} />
             <Button title="Löschen" variant="secondary" onPress={deleteLog} />
           </View>
           <ScrollView style={styles.logScroll}>

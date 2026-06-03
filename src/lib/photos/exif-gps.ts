@@ -30,6 +30,11 @@ export function toDecimal(value: unknown): number | null {
     const dec = d + m / 60 + s / 3600;
     return Number.isFinite(dec) ? dec : null;
   }
+  // expo-media-library getExifFullInfo stores GPS as a comma-separated rational
+  // DMS string: "45/1,58/1,840/100" — split and treat as [deg, min, sec].
+  if (typeof value === 'string' && value.includes(',') && value.includes('/')) {
+    return toDecimal(value.split(','));
+  }
   return rationalToNumber(value);
 }
 
@@ -37,8 +42,11 @@ export function signedCoord(value: unknown, ref: unknown): number | null {
   const dec = toDecimal(value);
   if (dec == null) return null;
   const r = typeof ref === 'string' ? ref.toUpperCase() : '';
-  const sign = r === 'S' || r === 'W' ? -1 : 1;
-  return Math.abs(dec) * sign;
+  // Explicit ref: force the hemisphere regardless of the decimal's sign.
+  if (r === 'S' || r === 'W') return -Math.abs(dec);
+  if (r === 'N' || r === 'E') return Math.abs(dec);
+  // No ref (e.g. signed decimal from Android ExifInterface.latLong): trust the sign.
+  return dec;
 }
 
 /** Pull GPS lat/lng out of an EXIF-like record, if both are present. */

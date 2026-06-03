@@ -187,7 +187,15 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
             lng = info.location.longitude;
           }
           if ((lat == null || lng == null) && info.exif) {
-            const gps = gpsFromExif(info.exif as Record<string, unknown>);
+            const rawExif = info.exif as Record<string, unknown>;
+            // Log raw GPS values so we can diagnose format issues without a rebuild.
+            logLine('EXIF', 'info.exif GPS raw', {
+              GPSLatitude: rawExif.GPSLatitude,
+              GPSLatitudeRef: rawExif.GPSLatitudeRef,
+              GPSLongitude: rawExif.GPSLongitude,
+              GPSLongitudeRef: rawExif.GPSLongitudeRef,
+            });
+            const gps = gpsFromExif(rawExif);
             if (gps) {
               lat = gps.lat;
               lng = gps.lng;

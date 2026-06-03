@@ -65,6 +65,13 @@ describe('toDecimal', () => {
     expect(toDecimal(['45/1', '58/1', '840/100'])).toBeCloseTo(MUZZANO_LAT, 3);
   });
 
+  it('handles comma-separated rational DMS string (expo-media-library getExifFullInfo format)', () => {
+    // expo-media-library's getExifFullInfo stores GPS via ExifInterface.getAttribute()
+    // which returns "deg/1,min/1,sec/100" — a single comma-separated string.
+    expect(toDecimal('45/1,58/1,840/100')).toBeCloseTo(MUZZANO_LAT, 3);
+    expect(toDecimal('8/1,55/1,540/100')).toBeCloseTo(MUZZANO_LNG, 3);
+  });
+
   it('passes through a plain decimal number', () => {
     expect(toDecimal(45.969)).toBeCloseTo(MUZZANO_LAT, 3);
   });
@@ -88,8 +95,21 @@ describe('signedCoord', () => {
     expect(signedCoord([8, 55, 5.4], 'W')).toBeCloseTo(-MUZZANO_LNG, 3);
   });
 
-  it('defaults to positive when ref is absent', () => {
+  it('defaults to positive when ref is absent and value is positive', () => {
     expect(signedCoord(45, undefined)).toBe(45);
+  });
+
+  it('preserves negative sign when ref is absent (signed decimal from ExifInterface.latLong)', () => {
+    // Android ExifInterface.latLong returns signed decimals without a Ref field.
+    // signedCoord must NOT take Math.abs in this case — it would flip the hemisphere.
+    expect(signedCoord(-33.867, undefined)).toBeCloseTo(-33.867, 3); // Sydney
+    expect(signedCoord(-151.2, undefined)).toBeCloseTo(-151.2, 3);   // west longitude
+  });
+
+  it('explicit S/W ref overrides a positive decimal', () => {
+    // Standard EXIF: positive rational + Ref — ref always wins.
+    expect(signedCoord(33.867, 'S')).toBeCloseTo(-33.867, 3);
+    expect(signedCoord(151.2, 'W')).toBeCloseTo(-151.2, 3);
   });
 
   it('returns null when coordinate is absent', () => {
@@ -178,6 +198,30 @@ describe('gpsFromExif — edge cases', () => {
     });
     expect(gps!.lat).toBeCloseTo(-33.867, 2);
     expect(gps!.lng).toBeCloseTo(151.2, 2);
+  });
+
+  it('handles signed decimal GPS without Ref (expo-media-library signed-decimal format)', () => {
+    // Android ExifInterface.latLong returns signed decimals; Ref fields may be absent.
+    // signedCoord must preserve the negative sign without a Ref field.
+    const gps = gpsFromExif({
+      GPSLatitude: -33.867,
+      GPSLongitude: 151.2,
+      // no GPSLatitudeRef / GPSLongitudeRef
+    });
+    expect(gps!.lat).toBeCloseTo(-33.867, 2);
+    expect(gps!.lng).toBeCloseTo(151.2, 2);
+  });
+
+  it('handles comma-separated rational DMS string GPS (expo-media-library getExifFullInfo)', () => {
+    // getExifFullInfo reads via ExifInterface.getAttribute() → "deg/1,min/1,sec/100"
+    const gps = gpsFromExif({
+      GPSLatitude: '45/1,58/1,840/100',
+      GPSLatitudeRef: 'N',
+      GPSLongitude: '8/1,55/1,540/100',
+      GPSLongitudeRef: 'E',
+    });
+    expect(gps!.lat).toBeCloseTo(MUZZANO_LAT, 3);
+    expect(gps!.lng).toBeCloseTo(MUZZANO_LNG, 3);
   });
 });
 
