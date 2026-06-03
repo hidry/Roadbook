@@ -4,19 +4,28 @@
  * (README §3). On Android, GPS in photo metadata requires ACCESS_MEDIA_LOCATION
  * (declared in app.json AND granted at runtime) — otherwise location is empty.
  *
- * The Android 13+ Photo Picker (PICK_VISUAL_MEDIA) strips GPS from returned
- * images and does NOT populate asset.assetId. We work around both problems:
- *   1. GPS stripped from picker EXIF → clear (0,0) so the MediaLibrary path runs.
- *   2. No assetId → extract numeric MediaStore ID from the asset URI so we can
- *      still call getAssetInfoAsync(), which reads location via ExifInterface +
- *      ACCESS_MEDIA_LOCATION.
+ * Android 13+ Photo Picker (PICK_VISUAL_MEDIA) behaviour:
+ *   • asset.assetId is NOT set (picker doesn't expose the MediaStore ID)
+ *   • asset.uri is a cache-file path (file:///…), NOT a content:// URI
+ *   • GPS is stripped from asset.exif even with ACCESS_MEDIA_LOCATION because
+ *     the picker copies the image via openInputStream (not openFileDescriptor)
+ *
+ * Fallback strategy when assetId is absent:
+ *   Search MediaLibrary by filename within a ±14 h window (±14 h covers any
+ *   UTC offset because EXIF DateTimeOriginal is local time, DATE_TAKEN is UTC).
  *
  * Native module wrapper — not unit-tested; the pure GPS parsing it relies on
  * lives in `exif-gps.ts` (which is tested), and timestamps in `exif-date.ts`.
  */
 import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
+import {
+  getAssetInfoAsync,
+  getAssetsAsync,
+  requestPermissionsAsync as requestMediaPermissions,
+  type AssetInfo,
+} from 'expo-media-library/legacy';
 
+import { APP_VERSION, flushLog, logLine } from '@/lib/debug-log';
 import { exifDateToIso } from './exif-date';
 import { gpsFromExif } from './exif-gps';
 
@@ -50,20 +59,44 @@ export interface PickOutcome {
 }
 
 /**
- * Extract a numeric MediaStore ID from an Android photo URI so we can call
- * getAssetInfoAsync() even when the Photo Picker didn't set asset.assetId.
- *
- * Works for both picker URI formats:
- *   Android 13+ Photo Picker: content://media/picker/…/media/{id}
- *   Legacy gallery:           content://media/external/images/media/{id}
+ * Search MediaLibrary for a photo matching fileName within a ±14 h window
+ * around takenAt (interpreted as UTC, though it's actually local EXIF time).
+ * ±14 h covers all UTC offsets, so the real UTC timestamp is always inside.
+ * createdAfter/createdBefore filters on DATE_TAKEN (ms) in MediaStore.
  */
-function mediaStoreIdFromUri(uri: string): string | null {
-  const m = /\/media\/(\d+)(?:[?/]|$)/.exec(uri);
-  return m?.[1] ?? null;
+async function findAssetByFilename(
+  fileName: string | null | undefined,
+  takenAt: string | null,
+): Promise<AssetInfo | null> {
+  if (!fileName && !takenAt) return null;
+  try {
+    const opts: Parameters<typeof getAssetsAsync>[0] = {
+      mediaType: 'photo',
+      first: 500,
+    };
+    if (takenAt) {
+      const ms = new Date(takenAt).getTime();
+      if (Number.isFinite(ms)) {
+        opts.createdAfter = ms - 14 * 3_600_000;
+        opts.createdBefore = ms + 14 * 3_600_000;
+      }
+    }
+    const page = await getAssetsAsync(opts);
+    const match = fileName
+      ? page.assets.find((a) => a.filename === fileName)
+      : page.assets[0];
+    if (!match) return null;
+    return await getAssetInfoAsync(match.id);
+  } catch (e) {
+    logLine('EXIF', 'findAssetByFilename error', String(e));
+    return null;
+  }
 }
 
 /** Opens the photo picker and returns each selected photo with its metadata. */
 export async function pickAndReadPhotos(): Promise<PickOutcome> {
+  logLine('EXIF', `pickAndReadPhotos start — app v${APP_VERSION}`);
+
   const picker = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!picker.granted) {
     throw new Error('Kein Zugriff auf Fotos erlaubt.');
@@ -71,7 +104,8 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
   // MediaLibrary permission unlocks getAssetInfoAsync().location (needs
   // ACCESS_MEDIA_LOCATION on Android, declared in app.json). On Android this is
   // the reliable source for the embedded GPS — picker EXIF is often stripped.
-  const lib = await MediaLibrary.requestPermissionsAsync();
+  const lib = await requestMediaPermissions();
+  logLine('EXIF', 'permissions', { picker: picker.granted, lib: lib.granted });
 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
@@ -88,7 +122,12 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
     mediaLibraryGranted: lib.granted,
     gpsZero: 0,
   };
-  if (result.canceled) return { photos: [], diagnostics: empty };
+  if (result.canceled) {
+    await flushLog();
+    return { photos: [], diagnostics: empty };
+  }
+
+  logLine('EXIF', `picker returned ${result.assets.length} assets`);
 
   let assetIdMissing = 0;
   let gpsZero = 0;
@@ -108,6 +147,8 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
       }
     }
 
+    const exifGpsSource = lat != null ? 'picker-exif' : null;
+
     // Clear picker-EXIF GPS when it is (0, 0) so the MediaLibrary fallback can
     // still query the real embedded location. Samsung (and some other OEMs) write
     // zeroes instead of omitting the GPS tag when location access is restricted.
@@ -115,31 +156,36 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
 
     if (!asset.assetId) assetIdMissing++;
 
-    // Derive the MediaStore ID from the asset URI when the picker didn't expose
-    // it directly (Android 13+ Photo Picker omits assetId). With the ID we can
-    // call getAssetInfoAsync() which reads the embedded location via
-    // ExifInterface + ACCESS_MEDIA_LOCATION, bypassing the picker's GPS strip.
-    const effectiveId = asset.assetId ?? mediaStoreIdFromUri(asset.uri);
-
-    // The structured MediaLibrary record is the reliable Android source for the
-    // embedded location and capture time — query it whenever anything is missing.
-    if ((lat == null || lng == null || takenAt == null) && effectiveId && lib.granted) {
+    // Android 13+ Photo Picker sets assetId = null and returns a cache-file URI
+    // (file:///…), so we cannot extract a MediaStore ID from the URI.
+    // When assetId is set (legacy picker), use it directly with getAssetInfoAsync.
+    // When assetId is absent, search MediaLibrary by filename within ±14 h.
+    if ((lat == null || lng == null || takenAt == null) && lib.granted) {
       try {
-        const info = await MediaLibrary.getAssetInfoAsync(effectiveId, { shouldDownloadFromNetwork: true });
-        if ((lat == null || lng == null) && info.location) {
-          lat = info.location.latitude;
-          lng = info.location.longitude;
+        let info: AssetInfo | null = null;
+        if (asset.assetId) {
+          info = await getAssetInfoAsync(asset.assetId, { shouldDownloadFromNetwork: true });
+          logLine('EXIF', 'getAssetInfoAsync by assetId', { assetId: asset.assetId, hasLocation: !!info?.location });
+        } else {
+          info = await findAssetByFilename(asset.fileName, takenAt);
+          logLine('EXIF', 'findAssetByFilename', { fileName: asset.fileName, takenAt, found: !!info, hasLocation: !!info?.location });
         }
-        if ((lat == null || lng == null) && info.exif) {
-          const gps = gpsFromExif(info.exif as Record<string, unknown>);
-          if (gps) {
-            lat = gps.lat;
-            lng = gps.lng;
+        if (info) {
+          if ((lat == null || lng == null) && info.location) {
+            lat = info.location.latitude;
+            lng = info.location.longitude;
           }
+          if ((lat == null || lng == null) && info.exif) {
+            const gps = gpsFromExif(info.exif as Record<string, unknown>);
+            if (gps) {
+              lat = gps.lat;
+              lng = gps.lng;
+            }
+          }
+          if (!takenAt && info.creationTime) takenAt = new Date(info.creationTime).toISOString();
         }
-        if (!takenAt && info.creationTime) takenAt = new Date(info.creationTime).toISOString();
-      } catch {
-        // ignore — a single asset without metadata must not break the batch
+      } catch (e) {
+        logLine('EXIF', 'MediaLibrary fallback error', String(e));
       }
     }
 
@@ -149,6 +195,16 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
       lat = null;
       lng = null;
     }
+
+    logLine('EXIF', 'asset result', {
+      fileName: asset.fileName,
+      assetId: asset.assetId ?? null,
+      uriScheme: asset.uri.split(':')[0],
+      exifGpsSource,
+      lat,
+      lng,
+      takenAt,
+    });
 
     out.push({ id: asset.assetId ?? asset.uri, uri: asset.uri, lat, lng, takenAt });
   }
@@ -161,5 +217,8 @@ export async function pickAndReadPhotos(): Promise<PickOutcome> {
     mediaLibraryGranted: lib.granted,
     gpsZero,
   };
+
+  logLine('EXIF', 'diagnostics', diagnostics);
+  await flushLog();
   return { photos: out, diagnostics };
 }
