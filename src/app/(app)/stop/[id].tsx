@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
+import { StopMap } from '@/components/MapView';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { photoRepo, stopRepo } from '@/lib/db/repositories';
@@ -106,6 +107,8 @@ export default function StopScreen() {
           </>
         ) : null}
       </Card>
+
+      <StopMap stop={stop} />
 
       <Card>
         <View style={styles.coords}>
