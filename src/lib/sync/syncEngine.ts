@@ -14,6 +14,7 @@ import type { EntityType } from '@/types/models';
 import { getDb } from '@/lib/db/sqlite';
 import type { Row } from '@/lib/db/mappers';
 import { supabase } from '@/lib/supabase';
+import { flushLog, logLine } from '@/lib/debug-log';
 
 const TABLES: EntityType[] = ['roadbooks', 'routes', 'stops', 'photos'];
 const LAST_PULL_KEY = (t: EntityType) => `sync:lastPull:${t}`;
@@ -57,10 +58,14 @@ export async function pushPending(): Promise<void> {
     if (rows.length === 0) continue;
     const payload = rows.map((r) => toRemote(table, r));
     const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
-    if (error) throw new Error(`push ${table}: ${error.message}`);
+    if (error) {
+      logLine('SYNC:PUSH', `${table} FEHLER: ${error.message}`, { code: error.code, details: error.details });
+      throw new Error(`push ${table}: ${error.message}`);
+    }
     const ids = rows.map((r) => String(r.id));
     const placeholders = ids.map(() => '?').join(',');
     await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
+    logLine('SYNC:PUSH', `${table}: ${rows.length} Zeile(n) übertragen`);
   }
 }
 
@@ -70,7 +75,10 @@ export async function pullChanges(): Promise<void> {
   for (const table of TABLES) {
     const since = (await AsyncStorage.getItem(LAST_PULL_KEY(table))) ?? '1970-01-01T00:00:00.000Z';
     const { data, error } = await supabase.from(table).select('*').gt('updated_at', since).order('updated_at');
-    if (error) throw new Error(`pull ${table}: ${error.message}`);
+    if (error) {
+      logLine('SYNC:PULL', `${table} FEHLER: ${error.message}`, { code: error.code });
+      throw new Error(`pull ${table}: ${error.message}`);
+    }
     if (!data || data.length === 0) continue;
 
     let maxUpdated = since;
@@ -93,8 +101,27 @@ export async function pullChanges(): Promise<void> {
   }
 }
 
+/** Returns the total number of rows still waiting to be pushed. */
+export async function getPendingSyncCount(): Promise<number> {
+  const db = getDb();
+  let total = 0;
+  for (const table of TABLES) {
+    const row = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE pending_sync = 1;`);
+    total += row?.n ?? 0;
+  }
+  return total;
+}
+
 /** One full sync cycle. Best-effort: callers swallow errors when offline. */
 export async function syncNow(): Promise<void> {
-  await pushPending();
-  await pullChanges();
+  try {
+    await pushPending();
+    await pullChanges();
+  } catch (e) {
+    logLine('SYNC', `Zyklus abgebrochen: ${e instanceof Error ? e.message : String(e)}`);
+    throw e;
+  } finally {
+    // Flush buffered log lines from this cycle to disk (best-effort).
+    void flushLog();
+  }
 }

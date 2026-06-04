@@ -1,18 +1,20 @@
 /**
- * In-memory debug log — lines accumulate during an import session and are
- * flushed to disk once (at the end). The file is viewable from the import
- * screen and kept across app restarts for sharing / diagnosis.
+ * App-wide debug log. Lines are buffered in memory and flushed to disk
+ * together (zero I/O per line). Kept across restarts; viewable from the
+ * app menu.
  *
- * Usage:
- *   logLine('GPS', 'found via MediaLibrary', { lat, lng });  // collect
- *   await flushLog();                                         // write to disk
- *   const text = await readLog();                            // display / share
+ * Quick usage:
+ *   logLine('TAG', 'message', optionalData);   // buffer (zero I/O)
+ *   await flushLog();                           // write buffer to disk
+ *
+ * For one-shot writes (e.g. background tasks) use appendLog() which
+ * calls both in one go.
  */
 import Constants from 'expo-constants';
 import { deleteAsync, documentDirectory, EncodingType, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 
-const LOG_FILE = (documentDirectory ?? '') + 'import-debug.txt';
-const MAX_BYTES = 100_000;
+const LOG_FILE = (documentDirectory ?? '') + 'app-debug.txt';
+const MAX_BYTES = 200_000;
 
 export const APP_VERSION = Constants.expoConfig?.version ?? '?';
 
@@ -38,7 +40,6 @@ export async function flushLog(): Promise<void> {
     const session = _lines.join('\n') + '\n';
     _lines.length = 0;
 
-    // Prepend new session and cap total size
     let combined = session + '---\n' + existing;
     if (combined.length > MAX_BYTES) combined = combined.slice(0, MAX_BYTES);
 
@@ -48,7 +49,13 @@ export async function flushLog(): Promise<void> {
   }
 }
 
-/** Read the persisted log (most recent session first). */
+/** Log one line and flush to disk immediately. Use from background tasks. */
+export async function appendLog(tag: string, message: string, data?: unknown): Promise<void> {
+  logLine(tag, message, data);
+  await flushLog();
+}
+
+/** Read the persisted log (most recent entries first). */
 export async function readLog(): Promise<string> {
   try {
     return await readAsStringAsync(LOG_FILE, { encoding: EncodingType.UTF8 });
