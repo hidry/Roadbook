@@ -1,12 +1,15 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { Image } from 'expo-image';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
+import { StopMap } from '@/components/MapView';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { photoRepo, stopRepo } from '@/lib/db/repositories';
+import { syncNow } from '@/lib/sync/syncEngine';
 import type { Photo, Stop, StopRole, StopType } from '@/types/models';
 
 const TYPES: { value: StopType; label: string }[] = [
@@ -71,6 +74,7 @@ export default function StopScreen() {
       arrivalDate: arrival.trim() || null,
       notes: notes.trim() || null,
     });
+    syncNow().catch((e) => console.warn('[sync] post-write:', e instanceof Error ? e.message : e));
     setSaving(false);
     router.back();
   }
@@ -105,6 +109,8 @@ export default function StopScreen() {
         ) : null}
       </Card>
 
+      <StopMap stop={stop} />
+
       <Card>
         <View style={styles.coords}>
           <View style={styles.coordField}>
@@ -120,7 +126,30 @@ export default function StopScreen() {
 
       {photos.length > 0 ? (
         <Card>
-          <ThemedText type="smallBold">Fotos: {photos.length}</ThemedText>
+          <ThemedText type="smallBold">Fotos ({photos.length})</ThemedText>
+          {photos.map((p) => (
+            <View key={p.id} style={styles.photoRow}>
+              <Image
+                source={{ uri: p.localUri ?? p.storageUrl ?? undefined }}
+                style={styles.thumb}
+                contentFit="cover"
+                transition={200}
+              />
+              <View style={styles.photoMeta}>
+                <ThemedText type="small" numberOfLines={1} style={styles.photoName}>
+                  {photoFilename(p)}
+                </ThemedText>
+                <ThemedText type="small" style={[styles.photoStatus, { color: STATUS_COLOR[p.uploadStatus] }]}>
+                  {STATUS_LABEL[p.uploadStatus]}
+                </ThemedText>
+                {p.takenAt ? (
+                  <ThemedText type="small" style={styles.photoDate}>
+                    {p.takenAt.slice(0, 10)}
+                  </ThemedText>
+                ) : null}
+              </View>
+            </View>
+          ))}
         </Card>
       ) : null}
 
@@ -128,6 +157,23 @@ export default function StopScreen() {
       <Button title="Speichern" onPress={save} loading={saving} />
     </Screen>
   );
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  pending: '#F5A623',
+  uploaded: '#30A46C',
+  failed: '#E5484D',
+};
+const STATUS_LABEL: Record<string, string> = {
+  pending: 'ausstehend',
+  uploaded: 'hochgeladen',
+  failed: 'fehlgeschlagen',
+};
+
+function photoFilename(p: Photo): string {
+  const uri = p.localUri ?? p.storageUrl ?? '';
+  const raw = uri.split('/').pop()?.split('?')[0] ?? '';
+  return raw || p.id.slice(0, 12) + '…';
 }
 
 function Segmented<T extends string | null>({
@@ -168,4 +214,10 @@ const styles = StyleSheet.create({
   notes: { minHeight: 96, textAlignVertical: 'top', paddingTop: Spacing.two },
   segmented: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   segment: { paddingVertical: Spacing.two, paddingHorizontal: Spacing.three, borderRadius: Spacing.two },
+  photoRow: { flexDirection: 'row', gap: Spacing.two, alignItems: 'flex-start' },
+  thumb: { width: 60, height: 60, borderRadius: Spacing.one, backgroundColor: '#c0c8d0' },
+  photoMeta: { flex: 1, gap: 2 },
+  photoName: { fontFamily: 'monospace', fontSize: 11 },
+  photoStatus: { fontSize: 11 },
+  photoDate: { opacity: 0.6, fontSize: 11 },
 });

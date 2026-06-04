@@ -202,6 +202,48 @@ der Import zeigt den konkreten Grund (z. B. „HTTP 429 – gedrosselt"). Häufi
 Ursache der Meldung „Ortsnamen nicht ermittelbar" ist die Drosselung der
 öffentlichen Instanz — der Retry bzw. ein erneuter Import später löst das meist.
 
+## Sync-Diagnose & bekannte Fallstricke
+
+### Diagnose-Werkzeuge (App-Menü → Sync-Reparatur)
+
+| Button | Funktion |
+|--------|----------|
+| **Sync jetzt** | manueller Push + Pull, Ergebnis im Diagnose-Log sichtbar |
+| **Auth-Diagnose** | ruft `debug_auth()` RPC auf → zeigt `uid`/`role`/`has_claims` direkt aus PostgreSQL; `has_claims: false` = PostgREST hat den JWT nicht anerkannt |
+| **Token erneuern** | Force-Refresh des Supabase-JWT, dann sofortiger Sync |
+| **owner_id reparieren** | `repairOwnership()`: setzt alle Roadbooks mit falscher `owner_id` auf aktuelle `auth_uid` + `pending_sync = 1` |
+
+Das Diagnose-Log (unten im Menü) enthält `SYNC:AUTH`-, `SYNC:PUSH`- und `SYNC:PULL`-Zeilen
+sowie `RENDER:CRASH`- und `JS:CRASH`-Einträge aus dem globalen Exception-Handler — ohne
+angeschlossenen Debugger der einzige Weg, Produktionsfehler zu sehen.
+
+### 42501 (RLS WITH CHECK) trotz korrekter Daten
+
+Häufigste Ursache: PostgREST hat `auth.uid()` = NULL → alle `WITH CHECK`-Policies schlagen fehl.
+
+**Diagnosevorgehen:**
+1. Menü → **Auth-Diagnose** ausführen: `has_claims: false` = PostgREST liest JWT-Claims nicht
+2. Ursache häufig: JWT-Signing-Key wurde gewechselt (Supabase migriert automatisch von HS256 auf ECC P-256/ES256). PostgREST muss dann JWKS neu laden.
+3. Fix: Supabase-Projekt im Dashboard **pausieren + neu starten** (oder Settings → Restart Service) → PostgREST lädt neue JWKS.
+
+⚠️ **Bekannter Supabase-Fallstrick:** Supabase migriert aktive Projekte automatisch von HS256 auf ECC P-256/ES256. `getSession()` prüft `expires_at` lokal — der Token sieht clientseitig gültig aus, wird von PostgREST aber nicht verifiziert, solange dessen JWKS-Cache das alte Key-Material hält. `resolveUid()` in `syncEngine.ts` loggt `jwtSub` und Ablauf-Zeitstempel, um diesen Zustand sichtbar zu machen.
+
+### Route-Tombstones scheitern am Push
+
+Migration `0004_fix_route_insert_rls.sql` behebt das: die ursprüngliche `route_insert`-Policy
+hatte `rb.deleted_at IS NULL`, was Routes von soft-gelöschten Roadbooks vom Sync ausschloss.
+Tombstones müssen in Supabase landen, damit Löschungen auf andere Geräte/User propagieren.
+
+### INSERT statt UPSERT
+
+`pushPending()` verwendet `supabase.from(table).insert(payload)`, nicht `.upsert(…, {onConflict: 'id'})`.
+Grund: PostgreSQL 15+ evaluiert die `UPDATE USING`-Policy auch in `INSERT ON CONFLICT DO UPDATE`,
+selbst wenn kein Konflikt vorliegt → neue Zeilen schlagen mit 42501 fehl, wenn die UPDATE-Policy
+restriktiver als INSERT ist. Batch-23505 (Duplikat) oder -42501 (RLS-Verletzung einzelner Rows)
+lösen einen Per-Row-Fallback aus: gute Rows kommen durch, fehlerhafte werden einzeln gelogged.
+
+---
+
 ## Was hier (Cloud-Build-Umgebung) nicht verifizierbar ist
 Gerätelauf (Picker/EXIF/MapLibre-Rendering), echter R2-Upload, EAS-Build und
 Supabase-Cloud brauchen Secrets bzw. ein Gerät und passieren außerhalb dieses

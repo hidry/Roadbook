@@ -19,6 +19,15 @@ export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
   );
 }
 
+export function StopMap({ stop, style }: { stop: Stop; style?: object }) {
+  return (
+    <View style={[styles.placeholder, styles.stopMapSize, style]} testID="stop-map-web">
+      <ThemedText type="small">Karte auf Gerät verfügbar.</ThemedText>
+      <ThemedText type="small">{stop.name}</ThemedText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   placeholder: {
     height: 240,
@@ -28,4 +37,5 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#dfe7ef',
   },
+  stopMapSize: { height: 180 },
 });

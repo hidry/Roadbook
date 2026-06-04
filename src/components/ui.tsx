@@ -14,7 +14,7 @@ import {
   type TextInputProps,
   type ViewProps,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -25,12 +25,13 @@ const DANGER = '#E5484D';
 
 export function Screen({ children, scroll = true }: { children: React.ReactNode; scroll?: boolean }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const Body = scroll ? ScrollView : View;
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
       <Body
         style={styles.flex}
-        contentContainerStyle={scroll ? styles.scrollContent : undefined}
+        contentContainerStyle={scroll ? [styles.scrollContent, { paddingBottom: Spacing.three + insets.bottom }] : undefined}
         keyboardShouldPersistTaps={scroll ? 'handled' : undefined}>
         {children}
       </Body>

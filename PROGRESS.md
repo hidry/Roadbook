@@ -64,13 +64,29 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] `eas.json` (development/preview/production Build-Profile)
 - [x] typecheck + lint + jest grün (App-Code)
 
+### P7 — Sync-Härtung & Crash-Diagnose ✅
+- [x] `syncEngine` komplett überarbeitet:
+  - `resolveUid()`: JWT-Payload dekodieren (nur für Logging), Token-Ablauf + Force-Refresh, `uid vs. jwtSub`-Mismatch-Logging
+  - INSERT-first statt UPSERT: kein `ON CONFLICT DO UPDATE`, um PostgreSQL-15-Verhalten zu umgehen (UPDATE USING wird auch für neue Zeilen evaluiert → 42501 bei neuen Rows)
+  - Per-Row-Fallback bei Batch-42501 (RLS) oder 23505 (Duplikat): gute Rows kommen durch, eine fehlerhafte blockiert nicht die gesamte Tabelle
+  - Owner-ID-Filter + Logging für Roadbooks: Rows mit `owner_id ≠ auth_uid` werden gefiltert und protokolliert
+- [x] `repairOwnership(userId)`: setzt falsche `owner_id` auf aktuellen User + markiert `pending_sync = 1`
+- [x] Migration `0003_debug_auth.sql`: `debug_auth()`-RPC → liefert `uid`, `role`, `has_claims` direkt aus PostgreSQL (Diagnose, ob PostgREST den JWT korrekt verarbeitet)
+- [x] Migration `0004_fix_route_insert_rls.sql`: `route_insert`-Policy entfernt `rb.deleted_at IS NULL`-Guard, der Tombstone-Routes soft-gelöschter Roadbooks am Sync gehindert hat
+- [x] Menu-Screen (`src/app/(app)/menu.tsx`): Sync jetzt · Auth-Diagnose · Token erneuern · owner_id reparieren · Pending-Count-Anzeige · Diagnose-Log (Teilen/Löschen)
+- [x] Globales Exception-Handling: `ErrorBoundary`-Klassen-Komponente (React-Render-Fehler → `appendLog('RENDER:CRASH')`) + `ErrorUtils.setGlobalHandler` im Root-Layout (unkontrollierte JS-Exceptions → `appendLog('JS:CRASH')`) — beide landen im Menu-Diagnose-Log
+
 ---
 
 ## Stand
-MVP-Code vollständig umgesetzt (P0–P6). Headless verifiziert: `npm run typecheck`,
+MVP-Code vollständig umgesetzt (P0–P7). Headless verifiziert: `npm run typecheck`,
 `npm test` (25 Tests), `npm run lint` — alle grün. RLS-Isolationsbeweis läuft in CI.
+Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallback,
+Tombstone-RLS-Fix, globales Crash-Logging.
 **Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
 R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
+**Migrations 0003 + 0004** müssen im Cloud-Projekt einmalig eingespielt werden
+(via `supabase db push` oder Supabase SQL-Editor).
 
 ---
 
@@ -80,6 +96,7 @@ Payment/Abo · Sharing-UI · Store-Submission · DSGVO-Volltexte · volle Sync-E
 bereits vorbereitet.
 
 ## Hinweise für die Fortsetzung nach Pause
-- Branch: `claude/plane-project-mvp-6I6WO`
+- Branch: `claude/app-ui-data-persistence-e96qb`
 - Was läuft headless: `npm run typecheck`, `npm test`, lokal `npx supabase start` + RLS-Test.
 - Was NICHT hier testbar: Gerätelauf (Picker/EXIF/MapLibre), echter R2-Upload, EAS-Build, Supabase-Cloud → brauchen Secrets/Gerät.
+- Migrations 0003 + 0004 nach jedem `supabase db push` automatisch eingespielt; für manuelle Cloud-Setups einmalig via SQL-Editor.

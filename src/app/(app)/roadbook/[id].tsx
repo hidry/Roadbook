@@ -6,7 +6,12 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { roadbookRepo, routeRepo } from '@/lib/db/repositories';
+import { syncNow } from '@/lib/sync/syncEngine';
 import type { Roadbook, Route } from '@/types/models';
+
+function syncAfterWrite() {
+  syncNow().catch((e) => console.warn('[sync] post-write:', e instanceof Error ? e.message : e));
+}
 
 export default function RoadbookScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,6 +37,7 @@ export default function RoadbookScreen() {
     await routeRepo.create({ roadbookId: id, title: trimmed });
     setTitle('');
     await load();
+    syncAfterWrite();
   }
 
   function confirmDelete(route: Route) {
@@ -43,6 +49,7 @@ export default function RoadbookScreen() {
         onPress: async () => {
           await routeRepo.remove(route.id);
           await load();
+          syncAfterWrite();
         },
       },
     ]);

@@ -491,6 +491,7 @@ Alles andere (Payment, Sharing-UI, Store, Sync-Tool-Wahl) ist additiv und blocki
 | Multi-Tenant nachträglich | Data Integrity | Hoch | RLS ab Tag 1 |
 | Offline nachträglich (Schema-Migration) | Data Integrity | Hoch | Offline-ready Schema ab Tag 1 (§5.4) |
 | GPS = personenbezogene Daten | Security/Recht | Hoch | EU-Region, Verschlüsselung, keine Roh-EXIF, Betroffenenrechte |
+| **JWT-Signing-Key-Rotation** (Supabase) | Betrieb | Mittel | Supabase migriert Projekte automatisch von HS256 auf ECC P-256/ES256; PostgREST muss JWKS neu laden (Projekt-Neustart). Bis dahin: `auth.uid()` = NULL → alle RLS WITH CHECK schlagen fehl. `debug_auth()` RPC und `resolveUid()`-Logging machen es sichtbar. |
 | Bilder ohne GPS | UX | Mittel | Manuelle Zuordnung als Fallback |
 | Free-Tier-Pausierung | Betrieb | Mittel | Vor Launch auf Pro wechseln |
 | Backend-Kosten > Einnahmen | Wirtschaftlich | Mittel | Abo-/Freemium-Modell |
@@ -607,12 +608,25 @@ Der MVP-Scope aus §8 ist als lauffähiger Code umgesetzt. Setup & Befehle:
 **One-Way-Doors (§9) gesetzt:** Multi-Tenant/RLS ab Tag 1 · Client-UUID-PKs ·
 Soft-Delete + `updatedAt` (offline-ready Schema **und** Schreibpfad) · Bilder nur über R2.
 
+**Sync-Engine (über MVP-Scope hinaus gehärtet):**
+- INSERT-first-Strategie (kein UPSERT) + per-Row-Fallback bei 42501/23505
+- JWT-Ablauf-Erkennung + Force-Refresh in `resolveUid()`
+- `debug_auth()` RPC (Migration 0003) + Diagnose-Werkzeuge im App-Menü
+- `route_insert`-RLS-Fix für Tombstone-Sync (Migration 0004)
+- `repairOwnership()` für owner_id-Korrekturen nach Testdaten-Problemen
+
+**Globales Exception-Handling:** React `ErrorBoundary` (Render-Fehler) +
+`ErrorUtils.setGlobalHandler` (unkontrollierte JS-Exceptions) → beide schreiben
+ins Diagnose-Log (App-Menü sichtbar), kein Debugger nötig.
+
 ### 15.2 Technische Hinweise / Abweichungen
 - **Expo SDK 56** statt 55: Die npm-Registry liefert SDK 56 inzwischen stabil
   (die §3-Empfehlung „SDK 55" stammt vom Stand Mai 2026). Stack sonst wie §3.
 - **Auth-Methode** (offene Frage §13): für den MVP **E-Mail+Passwort** gewählt.
 - Bilder/Sync-Schema sind für Sharing (§8 raus) und volle Offline-Sync-Engine
   (§5.4, Post-MVP) bereits vorbereitet — kein Schema-Umbau nötig.
+- **Migrations 0003 + 0004** müssen im Cloud-Projekt via `supabase db push`
+  oder Supabase SQL-Editor einmalig eingespielt werden (s. `DEVELOPMENT.md`).
 
 ### 15.3 Verifikation
 Headless grün: `npm run typecheck`, `npm test` (25 Unit-Tests für Clustering /
