@@ -20,6 +20,17 @@ import { nowIso } from '@/lib/util/id';
 const TABLES: EntityType[] = ['roadbooks', 'routes', 'stops', 'photos'];
 const LAST_PULL_KEY = (t: EntityType) => `sync:lastPull:${t}`;
 
+/** Decode the JWT payload without verification (for logging only). */
+function jwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split('.')[1];
+    // atob is available via react-native-url-polyfill/auto (already imported in supabase.ts)
+    return JSON.parse(atob(part)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 /** Local-only columns that must never be sent to the backend. */
 function toRemote(table: EntityType, row: Row): Record<string, unknown> {
   const { pending_sync: _pending, ...rest } = row;
@@ -51,18 +62,58 @@ function toLocal(table: EntityType, row: Record<string, unknown>): Row {
   return out;
 }
 
-/** Pushes all rows marked pending_sync = 1 to Supabase, then clears the flag. */
-export async function pushPending(): Promise<void> {
-  // In React Native the session is restored from AsyncStorage asynchronously.
-  // Always call getSession() first so the client's in-memory token is current
-  // before any REST call — otherwise auth.uid() evaluates to null in Postgres
-  // and every INSERT/UPDATE fails the RLS WITH CHECK.
+/**
+ * Ensure we have a fresh, server-verified JWT before pushing.
+ *
+ * getSession() reads from AsyncStorage and checks expires_at locally — it does
+ * NOT verify the JWT signature. If the Supabase project was reset or the JWT
+ * secret rotated, the stored token is cryptographically invalid even though
+ * expires_at looks fine. PostgREST then falls back to the anon role, making
+ * auth.uid() return NULL, which causes every INSERT to fail the RLS WITH CHECK.
+ *
+ * Strategy:
+ *   1. Read current session (fast, no network).
+ *   2. Log JWT sub claim and expires_at for diagnosis.
+ *   3. If token has expired or will expire within 60 s, force-refresh it.
+ *   4. Return the uid to use for the push, or null if auth is broken.
+ */
+async function resolveUid(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
-    logLine('SYNC:PUSH', 'Keine Auth-Session — übersprungen');
+    logLine('SYNC:AUTH', 'Keine Session in AsyncStorage');
+    return null;
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expiresAt = session.expires_at ?? 0;
+  const claims = jwtPayload(session.access_token);
+  const jwtSub = String(claims?.sub ?? '—');
+  const jwtExp = typeof claims?.exp === 'number' ? claims.exp : 0;
+  const tokenExpired = jwtExp > 0 && jwtExp < nowSec;
+
+  logLine('SYNC:AUTH', `uid=${session.user.id} jwtSub=${jwtSub} match=${session.user.id === jwtSub} exp=${jwtExp} now=${nowSec} expired=${tokenExpired}`);
+
+  if (tokenExpired || expiresAt < nowSec + 60) {
+    logLine('SYNC:AUTH', 'Token abgelaufen — refreshe...');
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr || !refreshed.session) {
+      logLine('SYNC:AUTH', `Refresh fehlgeschlagen: ${refreshErr?.message ?? '?'} — neu anmelden erforderlich`);
+      return null;
+    }
+    logLine('SYNC:AUTH', 'Token erfolgreich erneuert');
+    return refreshed.session.user.id;
+  }
+
+  return session.user.id;
+}
+
+/** Pushes all rows marked pending_sync = 1 to Supabase, then clears the flag. */
+export async function pushPending(): Promise<void> {
+  const uid = await resolveUid();
+  if (!uid) {
+    logLine('SYNC:PUSH', 'Kein gültiges Auth-Token — Push übersprungen');
     return;
   }
-  const uid = session.user.id;
 
   const db = getDb();
   for (const table of TABLES) {
@@ -90,6 +141,13 @@ export async function pushPending(): Promise<void> {
     const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
     if (error) {
       logLine('SYNC:PUSH', `${table} FEHLER: ${error.message}`, { code: error.code, details: error.details });
+      if (error.code === '42501') {
+        // RLS violation: token accepted by PostgREST but auth.uid() is NULL or
+        // the row belongs to a different user in Supabase. Log and skip — do NOT
+        // clear pending_sync so we retry after re-auth or a repairOwnership call.
+        logLine('SYNC:PUSH', `${table}: RLS-Fehler — Token prüfen oder Daten reparieren`);
+        continue;
+      }
       throw new Error(`push ${table}: ${error.message}`);
     }
     const ids = rows.map((r) => String(r.id));

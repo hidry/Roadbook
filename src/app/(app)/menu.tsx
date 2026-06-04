@@ -7,6 +7,7 @@ import { Button, Card, Screen } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { APP_VERSION, clearLog, readLog } from '@/lib/debug-log';
+import { supabase } from '@/lib/supabase';
 import { getPendingSyncCount, repairOwnership, syncNow } from '@/lib/sync/syncEngine';
 
 export default function MenuScreen() {
@@ -14,6 +15,7 @@ export default function MenuScreen() {
   const [logText, setLogText] = useState('');
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [repairing, setRepairing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     void readLog().then(setLogText);
@@ -27,6 +29,30 @@ export default function MenuScreen() {
   async function deleteLog() {
     await clearLog();
     setLogText('(kein Log vorhanden)');
+  }
+
+  async function refreshSession() {
+    setRefreshing(true);
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error || !data.session) {
+        Alert.alert(
+          'Session-Refresh fehlgeschlagen',
+          `${error?.message ?? 'Kein Token erhalten'}.\n\nBitte melde dich ab und neu an.`,
+        );
+      } else {
+        await syncNow();
+        const newCount = await getPendingSyncCount();
+        setPendingCount(newCount);
+        const newLog = await readLog();
+        setLogText(newLog);
+        Alert.alert('Session erneuert', 'Token wurde aktualisiert. Sync ausgeführt.');
+      }
+    } catch (e) {
+      Alert.alert('Fehler', e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function runRepair() {
@@ -71,15 +97,22 @@ export default function MenuScreen() {
       <Card>
         <ThemedText type="smallBold">Sync-Reparatur</ThemedText>
         <ThemedText type="small" style={styles.repairHint}>
-          Falls Roadbooks wegen RLS-Fehler nicht hochgeladen werden, korrigiert diese Funktion die
-          Eigentümer-ID aller lokalen Einträge und synchronisiert danach.
+          Bei RLS-42501-Fehler: erst Token erneuern, dann ggf. owner_id reparieren.
         </ThemedText>
-        <Button
-          title={repairing ? 'Läuft…' : 'owner_id reparieren & sync'}
-          variant="secondary"
-          onPress={runRepair}
-          disabled={repairing || !user}
-        />
+        <View style={styles.repairRow}>
+          <Button
+            title={refreshing ? 'Läuft…' : 'Token erneuern'}
+            variant="secondary"
+            onPress={refreshSession}
+            disabled={refreshing || repairing}
+          />
+          <Button
+            title={repairing ? 'Läuft…' : 'owner_id reparieren'}
+            variant="secondary"
+            onPress={runRepair}
+            disabled={repairing || refreshing || !user}
+          />
+        </View>
       </Card>
 
       <Card style={styles.logCard}>
@@ -102,6 +135,7 @@ const styles = StyleSheet.create({
   pending: { color: '#F5A623' },
   synced: { color: '#30A46C' },
   repairHint: { color: '#888', marginBottom: Spacing.two },
+  repairRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   logCard: { flex: 1 },
   logHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two },
   logActions: { flexDirection: 'row', gap: Spacing.two },
