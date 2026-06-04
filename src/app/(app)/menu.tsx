@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth/AuthProvider';
-import { APP_VERSION, clearLog, readLog } from '@/lib/debug-log';
+import { APP_VERSION, clearLog, flushLog, logLine, readLog } from '@/lib/debug-log';
 import { supabase } from '@/lib/supabase';
 import { getPendingSyncCount, repairOwnership, syncNow } from '@/lib/sync/syncEngine';
 
@@ -16,6 +16,7 @@ export default function MenuScreen() {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [diagnosing, setDiagnosing] = useState(false);
 
   useEffect(() => {
     void readLog().then(setLogText);
@@ -52,6 +53,27 @@ export default function MenuScreen() {
       Alert.alert('Fehler', e instanceof Error ? e.message : String(e));
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function diagAuth() {
+    setDiagnosing(true);
+    try {
+      // Requires debug_auth() function from migration 0003_debug_auth.sql.
+      // Apply via Supabase SQL Editor if not yet deployed.
+      const { data, error } = await supabase.rpc('debug_auth');
+      const result = error ? { rpc_error: error.message } : data;
+      logLine('AUTH:DIAG', JSON.stringify(result));
+      await flushLog();
+      setLogText(await readLog());
+      Alert.alert(
+        'Auth-Diagnose',
+        `uid: ${(result as Record<string,unknown>)?.uid ?? 'NULL'}\nrole: ${(result as Record<string,unknown>)?.role ?? '?'}\nhas_claims: ${String((result as Record<string,unknown>)?.has_claims ?? '?')}`,
+      );
+    } catch (e) {
+      Alert.alert('Fehler', e instanceof Error ? e.message : String(e));
+    } finally {
+      setDiagnosing(false);
     }
   }
 
@@ -101,16 +123,22 @@ export default function MenuScreen() {
         </ThemedText>
         <View style={styles.repairRow}>
           <Button
+            title={diagnosing ? 'Läuft…' : 'Auth-Diagnose'}
+            variant="secondary"
+            onPress={diagAuth}
+            disabled={diagnosing || refreshing || repairing}
+          />
+          <Button
             title={refreshing ? 'Läuft…' : 'Token erneuern'}
             variant="secondary"
             onPress={refreshSession}
-            disabled={refreshing || repairing}
+            disabled={refreshing || repairing || diagnosing}
           />
           <Button
             title={repairing ? 'Läuft…' : 'owner_id reparieren'}
             variant="secondary"
             onPress={runRepair}
-            disabled={repairing || refreshing || !user}
+            disabled={repairing || refreshing || diagnosing || !user}
           />
         </View>
       </Card>

@@ -138,39 +138,48 @@ export async function pushPending(): Promise<void> {
       if (payload.length === 0) continue;
     }
 
-    const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
-    if (error) {
-      logLine('SYNC:PUSH', `${table} FEHLER: ${error.message}`, { code: error.code, details: error.details });
-      if (error.code === '42501') {
-        // Batch upsert failed with RLS violation. Most likely cause: some rows
-        // already exist in Supabase under a different owner_id (e.g. from an
-        // earlier test account), and the ON CONFLICT DO UPDATE is blocked because
-        // the existing row is invisible to the current user.
-        // Fall back to INSERT-with-ignore-duplicates so at least NEW rows (which
-        // were never in Supabase) get pushed. Rows that truly conflict are skipped
-        // and stay pending_sync=1 for the next attempt after a Supabase cleanup.
-        logLine('SYNC:PUSH', `${table}: RLS 42501 — Fallback auf INSERT ignoreDuplicates`);
-        logLine('SYNC:PUSH', `${table}: Hinweis — ggf. Supabase-Tabelle leeren (SQL: DELETE FROM ${table};)`);
-        const { error: insertError } = await supabase.from(table).upsert(payload, { onConflict: 'id', ignoreDuplicates: true });
-        if (insertError) {
-          logLine('SYNC:PUSH', `${table} Fallback FEHLER: ${insertError.message}`, { code: insertError.code });
-          continue;
-        }
-        // Clear pending_sync only for rows that didn't already exist (i.e. were
-        // actually inserted). We can't tell which were skipped, so we clear all —
-        // next pull will overwrite any that already existed with the server copy.
-        const ids = rows.map((r) => String(r.id));
-        const placeholders = ids.map(() => '?').join(',');
-        await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
-        logLine('SYNC:PUSH', `${table}: Fallback OK (neue Rows eingefügt, doppelte übersprungen)`);
-        continue;
-      }
-      throw new Error(`push ${table}: ${error.message}`);
+    // Strategy: INSERT first (never uses ON CONFLICT DO UPDATE, so the UPDATE
+    // USING policy is not evaluated for new rows — avoids a PostgreSQL 15+
+    // behaviour where even new-row inserts fail if the UPDATE USING check would
+    // evaluate to false). For existing rows fall back to individual UPDATEs.
+    const { error: insertErr } = await supabase.from(table).insert(payload);
+
+    if (!insertErr) {
+      const ids = rows.map((r) => String(r.id));
+      const placeholders = ids.map(() => '?').join(',');
+      await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
+      logLine('SYNC:PUSH', `${table}: ${rows.length} Zeile(n) eingefügt`);
+      continue;
+    }
+
+    logLine('SYNC:PUSH', `${table} INSERT FEHLER: ${insertErr.message}`, { code: insertErr.code });
+
+    if (insertErr.code === '42501') {
+      // INSERT itself is RLS-blocked → auth.uid() is likely NULL (PostgREST JWT
+      // verification failed). Run the debug_auth() RPC to confirm.
+      logLine('SYNC:PUSH', `${table}: 42501 auf INSERT — auth.uid() wahrscheinlich NULL (Menü → Auth-Diagnose)`);
+      continue;
+    }
+
+    if (insertErr.code !== '23505') {
+      // Unexpected error
+      throw new Error(`push ${table}: ${insertErr.message}`);
+    }
+
+    // 23505: unique-key conflict — some rows already exist in Supabase.
+    // Fall back to row-by-row UPDATE for the existing ones.
+    logLine('SYNC:PUSH', `${table}: Duplikate — Fallback auf row-by-row UPDATE`);
+    let pushed = 0;
+    for (const row of payload) {
+      const rowId = String((row as Record<string, unknown>).id ?? '');
+      const { error: updateErr } = await supabase.from(table).update(row).eq('id', rowId);
+      if (!updateErr) { pushed++; continue; }
+      logLine('SYNC:PUSH', `${table}[${rowId.slice(0, 8)}…] UPDATE FEHLER: ${updateErr.message}`, { code: updateErr.code });
     }
     const ids = rows.map((r) => String(r.id));
     const placeholders = ids.map(() => '?').join(',');
     await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
-    logLine('SYNC:PUSH', `${table}: ${rows.length} Zeile(n) übertragen`);
+    logLine('SYNC:PUSH', `${table}: ${pushed}/${rows.length} via UPDATE`);
   }
 }
 
