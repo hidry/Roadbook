@@ -154,32 +154,34 @@ export async function pushPending(): Promise<void> {
 
     logLine('SYNC:PUSH', `${table} INSERT FEHLER: ${insertErr.message}`, { code: insertErr.code });
 
-    if (insertErr.code === '42501') {
-      // INSERT itself is RLS-blocked → auth.uid() is likely NULL (PostgREST JWT
-      // verification failed). Run the debug_auth() RPC to confirm.
-      logLine('SYNC:PUSH', `${table}: 42501 auf INSERT — auth.uid() wahrscheinlich NULL (Menü → Auth-Diagnose)`);
+    if (insertErr.code === '42501' || insertErr.code === '23505') {
+      // Batch failed: either an RLS violation (one row blocks the whole batch,
+      // e.g. a tombstone route whose parent roadbook is soft-deleted) or a
+      // unique-key conflict. Fall back to per-row so good rows still get through.
+      const reason = insertErr.code === '42501' ? 'RLS' : 'Duplikat';
+      logLine('SYNC:PUSH', `${table}: Batch-${reason} — Fallback auf row-by-row`);
+      let pushed = 0;
+      for (const row of payload) {
+        const rowId = String((row as Record<string, unknown>).id ?? '');
+        const { error: rowErr } = await supabase.from(table).insert([row]);
+        if (!rowErr) { pushed++; continue; }
+        if (rowErr.code === '23505') {
+          // Row exists → UPDATE
+          const { error: updErr } = await supabase.from(table).update(row).eq('id', rowId);
+          if (!updErr) { pushed++; continue; }
+          logLine('SYNC:PUSH', `${table}[${rowId.slice(0, 8)}…] UPDATE FEHLER: ${updErr.message}`, { code: updErr.code });
+          continue;
+        }
+        logLine('SYNC:PUSH', `${table}[${rowId.slice(0, 8)}…] INSERT FEHLER: ${rowErr.message}`, { code: rowErr.code });
+      }
+      const ids = rows.map((r) => String(r.id));
+      const placeholders = ids.map(() => '?').join(',');
+      await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
+      logLine('SYNC:PUSH', `${table}: ${pushed}/${rows.length} row-by-row OK`);
       continue;
     }
 
-    if (insertErr.code !== '23505') {
-      // Unexpected error
-      throw new Error(`push ${table}: ${insertErr.message}`);
-    }
-
-    // 23505: unique-key conflict — some rows already exist in Supabase.
-    // Fall back to row-by-row UPDATE for the existing ones.
-    logLine('SYNC:PUSH', `${table}: Duplikate — Fallback auf row-by-row UPDATE`);
-    let pushed = 0;
-    for (const row of payload) {
-      const rowId = String((row as Record<string, unknown>).id ?? '');
-      const { error: updateErr } = await supabase.from(table).update(row).eq('id', rowId);
-      if (!updateErr) { pushed++; continue; }
-      logLine('SYNC:PUSH', `${table}[${rowId.slice(0, 8)}…] UPDATE FEHLER: ${updateErr.message}`, { code: updateErr.code });
-    }
-    const ids = rows.map((r) => String(r.id));
-    const placeholders = ids.map(() => '?').join(',');
-    await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
-    logLine('SYNC:PUSH', `${table}: ${pushed}/${rows.length} via UPDATE`);
+    throw new Error(`push ${table}: ${insertErr.message}`);
   }
 }
 
