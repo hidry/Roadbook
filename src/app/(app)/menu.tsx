@@ -17,6 +17,7 @@ export default function MenuScreen() {
   const [repairing, setRepairing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [diagnosing, setDiagnosing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     void readLog().then(setLogText);
@@ -53,6 +54,20 @@ export default function MenuScreen() {
       Alert.alert('Fehler', e instanceof Error ? e.message : String(e));
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function runSync() {
+    setSyncing(true);
+    try {
+      await syncNow();
+      const newCount = await getPendingSyncCount();
+      setPendingCount(newCount);
+      setLogText(await readLog());
+    } catch (e) {
+      Alert.alert('Sync-Fehler', e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -121,7 +136,12 @@ export default function MenuScreen() {
         <ThemedText type="small" style={styles.repairHint}>
           Bei RLS-42501-Fehler: erst Token erneuern, dann ggf. owner_id reparieren.
         </ThemedText>
-        <View style={styles.repairRow}>
+        <Button
+          title={syncing ? 'Läuft…' : 'Sync jetzt'}
+          onPress={runSync}
+          disabled={syncing || refreshing || repairing || diagnosing}
+        />
+        <View style={[styles.repairRow, { marginTop: Spacing.two }]}>
           <Button
             title={diagnosing ? 'Läuft…' : 'Auth-Diagnose'}
             variant="secondary"
