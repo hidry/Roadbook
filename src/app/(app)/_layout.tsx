@@ -25,6 +25,7 @@ export default function AppLayout() {
       <Stack.Screen name="route/[id]" options={{ title: 'Route' }} />
       <Stack.Screen name="stop/[id]" options={{ title: 'Stopp' }} />
       <Stack.Screen name="import" options={{ title: 'Foto-Import', presentation: 'modal' }} />
+      <Stack.Screen name="menu" options={{ title: 'Menü' }} />
     </Stack>
   );
 }
