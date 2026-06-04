@@ -1,4 +1,4 @@
-import { useFocusEffect, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
@@ -49,6 +49,16 @@ export default function RoadbooksScreen() {
 
   return (
     <Screen>
+      <Stack.Screen
+        options={{
+          title: 'Roadbooks',
+          headerRight: () => (
+            <Pressable onPress={() => router.push('/menu')} hitSlop={12} style={styles.menuBtn}>
+              <ThemedText style={styles.menuBtnText}>···</ThemedText>
+            </Pressable>
+          ),
+        }}
+      />
       <Card>
         <ThemedText type="smallBold">Neues Roadbook</ThemedText>
         <TextField placeholder="z. B. Norwegen 2026" value={name} onChangeText={setName} onSubmitEditing={create} />
@@ -86,4 +96,6 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', paddingVertical: Spacing.four },
   rowTitle: { fontSize: 22, lineHeight: 28 },
   signOut: { marginTop: Spacing.four },
+  menuBtn: { paddingHorizontal: Spacing.two },
+  menuBtnText: { fontSize: 22, letterSpacing: 2 },
 });
