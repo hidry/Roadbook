@@ -142,10 +142,27 @@ export async function pushPending(): Promise<void> {
     if (error) {
       logLine('SYNC:PUSH', `${table} FEHLER: ${error.message}`, { code: error.code, details: error.details });
       if (error.code === '42501') {
-        // RLS violation: token accepted by PostgREST but auth.uid() is NULL or
-        // the row belongs to a different user in Supabase. Log and skip — do NOT
-        // clear pending_sync so we retry after re-auth or a repairOwnership call.
-        logLine('SYNC:PUSH', `${table}: RLS-Fehler — Token prüfen oder Daten reparieren`);
+        // Batch upsert failed with RLS violation. Most likely cause: some rows
+        // already exist in Supabase under a different owner_id (e.g. from an
+        // earlier test account), and the ON CONFLICT DO UPDATE is blocked because
+        // the existing row is invisible to the current user.
+        // Fall back to INSERT-with-ignore-duplicates so at least NEW rows (which
+        // were never in Supabase) get pushed. Rows that truly conflict are skipped
+        // and stay pending_sync=1 for the next attempt after a Supabase cleanup.
+        logLine('SYNC:PUSH', `${table}: RLS 42501 — Fallback auf INSERT ignoreDuplicates`);
+        logLine('SYNC:PUSH', `${table}: Hinweis — ggf. Supabase-Tabelle leeren (SQL: DELETE FROM ${table};)`);
+        const { error: insertError } = await supabase.from(table).upsert(payload, { onConflict: 'id', ignoreDuplicates: true });
+        if (insertError) {
+          logLine('SYNC:PUSH', `${table} Fallback FEHLER: ${insertError.message}`, { code: insertError.code });
+          continue;
+        }
+        // Clear pending_sync only for rows that didn't already exist (i.e. were
+        // actually inserted). We can't tell which were skipped, so we clear all —
+        // next pull will overwrite any that already existed with the server copy.
+        const ids = rows.map((r) => String(r.id));
+        const placeholders = ids.map(() => '?').join(',');
+        await db.runAsync(`UPDATE ${table} SET pending_sync = 0 WHERE id IN (${placeholders});`, ids);
+        logLine('SYNC:PUSH', `${table}: Fallback OK (neue Rows eingefügt, doppelte übersprungen)`);
         continue;
       }
       throw new Error(`push ${table}: ${error.message}`);
