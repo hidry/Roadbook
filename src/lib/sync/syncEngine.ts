@@ -13,8 +13,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { EntityType } from '@/types/models';
 import { getDb } from '@/lib/db/sqlite';
 import type { Row } from '@/lib/db/mappers';
+import { photoRepo } from '@/lib/db/repositories';
 import { supabase } from '@/lib/supabase';
 import { flushLog, logLine } from '@/lib/debug-log';
+import { compressPhoto } from '@/lib/photos/compress';
+import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
 import { nowIso } from '@/lib/util/id';
 
 const TABLES: EntityType[] = ['trips', 'stops', 'photos'];
@@ -250,11 +253,52 @@ export async function repairOwnership(userId: string): Promise<number> {
   return fixed;
 }
 
+/**
+ * Uploads photo binaries to R2 for every row not yet uploaded that still has a
+ * local file. Runs AFTER the Supabase metadata sync (metadata first, binaries
+ * second). Best-effort per photo; failures are marked 'failed' and retried on
+ * the next sync. `setUploaded`/`setUploadStatus` re-mark the row pending_sync=1
+ * so the new storage_url (or status) is pushed up afterwards.
+ *
+ * Returns the number of photos successfully uploaded this pass.
+ */
+export async function pushPhotoUploads(): Promise<number> {
+  const db = getDb();
+  const rows = (await db.getAllAsync(
+    `SELECT id, local_uri FROM photos
+     WHERE upload_status != 'uploaded' AND local_uri IS NOT NULL AND local_uri != '' AND deleted_at IS NULL;`,
+  )) as { id: string; local_uri: string }[];
+  if (rows.length === 0) return 0;
+
+  logLine('R2:UPLOAD', `${rows.length} Foto(s) noch zu laden`);
+  let ok = 0;
+  for (const r of rows) {
+    const short = r.id.slice(0, 8);
+    try {
+      const compressed = await compressPhoto(r.local_uri);
+      const url = await uploadPhotoToR2(compressed.uri, r.id);
+      await photoRepo.setUploaded(r.id, url);
+      ok++;
+      logLine('R2:UPLOAD', `OK ${short}…`);
+    } catch (e) {
+      await photoRepo.setUploadStatus(r.id, 'failed');
+      logLine('R2:UPLOAD', `FEHLER ${short}…: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  logLine('R2:UPLOAD', `${ok}/${rows.length} hochgeladen`);
+  return ok;
+}
+
 /** One full sync cycle. Best-effort: callers swallow errors when offline. */
 export async function syncNow(): Promise<void> {
   try {
+    // 1) Supabase first: push local metadata changes up, then pull remote down.
     await pushPending();
     await pullChanges();
+    // 2) R2 second: upload any photo binaries still pending/failed.
+    const uploaded = await pushPhotoUploads();
+    // 3) Push the resulting storage_url / status changes back up to Supabase.
+    if (uploaded > 0) await pushPending();
   } catch (e) {
     logLine('SYNC', `Zyklus abgebrochen: ${e instanceof Error ? e.message : String(e)}`);
     throw e;

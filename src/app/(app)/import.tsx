@@ -1,8 +1,9 @@
 /**
  * Photo-import flow (README §4): pick photos → read EXIF GPS/time → cluster into
  * stops → reverse-geocode names → user edits → save stops + photos onto the trip.
- * Photos are then compressed and uploaded to R2 in the background; a failed
- * upload is marked, never fatal (offline-first, README §5.4 upload queue).
+ * Photo rows are created with upload_status 'pending'; the sync engine then
+ * compresses + uploads them to R2 (Supabase metadata first, R2 binaries second)
+ * and retries failures on every later sync (offline-first, README §5.4).
  */
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -13,11 +14,9 @@ import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { photoRepo, stopRepo, tripRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
-import { clearLog, flushLog, logLine, readLog } from '@/lib/debug-log';
+import { clearLog, readLog } from '@/lib/debug-log';
 import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib/geocoding';
-import { compressPhoto } from '@/lib/photos/compress';
 import { pickAndReadPhotos, type PickedPhoto } from '@/lib/photos/exif';
-import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
 import { suggestRoute, type ClusterDiagnostics, type SuggestedStop } from '@/lib/photos/suggestion';
 import type { StopType } from '@/types/models';
 
@@ -158,14 +157,13 @@ export default function ImportScreen() {
         for (const pid of [...s.photoIds, ...s.attachedPhotoIds]) {
           const meta = metaById[pid];
           if (!meta) continue;
-          const photo = await photoRepo.create({
+          await photoRepo.create({
             stopId: created.id,
             localUri: meta.uri,
             takenAt: meta.takenAt,
             lat: meta.lat,
             lng: meta.lng,
           });
-          void uploadInBackground(photo.id, meta.uri);
         }
       }
       syncNow().catch((e) => console.warn('[sync] post-import:', e instanceof Error ? e.message : e));
@@ -274,24 +272,6 @@ export default function ImportScreen() {
       ) : null}
     </Screen>
   );
-}
-
-/** Compress + upload one photo; mark the row uploaded/failed. Best-effort, but
- *  the outcome is logged so an upload failure (missing presign URL, 401/403/500)
- *  is visible in the diagnostic log instead of being silently swallowed. */
-async function uploadInBackground(photoId: string, localUri: string): Promise<void> {
-  const short = photoId.slice(0, 8);
-  try {
-    const compressed = await compressPhoto(localUri);
-    const url = await uploadPhotoToR2(compressed.uri, photoId);
-    await photoRepo.setUploaded(photoId, url);
-    logLine('R2:UPLOAD', `OK ${short}… → ${url}`);
-  } catch (e) {
-    await photoRepo.setUploadStatus(photoId, 'failed');
-    logLine('R2:UPLOAD', `FEHLER ${short}…: ${e instanceof Error ? e.message : String(e)}`);
-  } finally {
-    void flushLog();
-  }
 }
 
 const styles = StyleSheet.create({
