@@ -76,7 +76,7 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Menu-Screen (`src/app/(app)/menu.tsx`): Sync jetzt · Auth-Diagnose · Token erneuern · owner_id reparieren · Pending-Count-Anzeige · Diagnose-Log (Teilen/Löschen)
 - [x] Globales Exception-Handling: `ErrorBoundary`-Klassen-Komponente (React-Render-Fehler → `appendLog('RENDER:CRASH')`) + `ErrorUtils.setGlobalHandler` im Root-Layout (unkontrollierte JS-Exceptions → `appendLog('JS:CRASH')`) — beide landen im Menu-Diagnose-Log
 
-### P8 — Datenmodell vereinfachen + Umbenennung (`roadbook`→`trip`, Route-Ebene weg) 🔄 (NÄCHSTES)
+### P8 — Datenmodell vereinfachen + Umbenennung (`roadbook`→`trip`, Route-Ebene weg) ✅ (Code) / ⏳ (RLS-Proof via CI)
 > **Namens-Entscheidung (s.u.):** „Roadbook“ ist der **App-Name** (die Sammlung von
 > Straßenreisen), kein Daten-Objekt. Das Top-Level-Objekt heißt **Trip** (UI: „Reise“).
 > Die heutige Tabelle `roadbooks` wird zu **`trips`** umbenannt. Stops hängen direkt
@@ -87,32 +87,32 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 > Zielmodell: `User → viele Trips (= Reise) → Stops → Photos`.
 > Code/DB-Begriff = `trip`/`trips` (engl., wie `stops`/`photos`); UI-Text = „Reise“.
 
-- [ ] Neue Migration `0005_collapse_to_trips.sql` (destruktiv ok):
+- [x] Neue Migration `0005_collapse_to_trips.sql` (destruktiv ok):
   - Tabelle `roadbooks` → **`trips`** umbenennen; `start_date` ergänzen
     (`trip.name` ersetzt das frühere `route.title`)
   - `routes`-Tabelle entfernen
   - `stops.route_id` → `stops.trip_id` (FK auf `trips`, `on delete cascade`),
     analog `idx`-Namen
   - Alt-Daten in `stops/photos` löschen (kein Backfill nötig)
-- [ ] RLS neu fassen (`0002_rls.sql` ist Basis): Policies `roadbook_*`→`trip_*`,
+- [x] RLS neu fassen (`0002_rls.sql` ist Basis): Policies `roadbook_*`→`trip_*`,
     `route_*` löschen; `stop_*`/`photo_*` EXISTS-Ketten auf `stops.trip_id → trips`
     verkürzen (Join über `routes` raus). Migration 0004 (route_insert-Fix) wird obsolet.
-- [ ] SQLite-Schema (`src/lib/db/schema.ts`): `roadbooks`→`trips`, `routes` raus,
+- [x] SQLite-Schema (`src/lib/db/schema.ts`): `roadbooks`→`trips`, `routes` raus,
     `stops.route_id`→`trip_id`, Indizes anpassen. SQLite lokal droppen & neu anlegen
     (keine Echtdaten) — Schema-Reset beim Start.
-- [ ] Typen/Mapper (`models.ts`): `Roadbook`→**`Trip`** (+ `startDate`),
+- [x] Typen/Mapper (`models.ts`): `Roadbook`→**`Trip`** (+ `startDate`),
     `Route` + `EntityType 'routes'` raus; `EntityType 'roadbooks'`→`'trips'`;
     `Stop.routeId`→`tripId`; `mappers.ts` (snake↔camel) nachziehen.
-- [ ] Repositories (`repositories.ts`): `roadbookRepo`→`tripRepo`, `routeRepo`
+- [x] Repositories (`repositories.ts`): `roadbookRepo`→`tripRepo`, `routeRepo`
     entfernen, `stopRepo.create` auf `tripId`; Foto-Import (`import.tsx`) erzeugt
     Stops direkt am Trip (kein Default-Route-Anlegen mehr).
-- [ ] Sync-Engine (`syncEngine.ts`): `TABLES` = `['trips','stops','photos']`;
+- [x] Sync-Engine (`syncEngine.ts`): `TABLES` = `['trips','stops','photos']`;
     Owner-ID-Filter/`repairOwnership` von `roadbooks` auf `trips` umstellen.
-- [ ] UI: `app/(app)/roadbook/[id].tsx` → `trip/[id].tsx` (zeigt direkt die Stops),
+- [x] UI: `app/(app)/roadbook/[id].tsx` → `trip/[id].tsx` (zeigt direkt die Stops),
     `route/[id].tsx` auflösen, Liste/Karte/Menu auf `tripId` + Label „Reise(n)“.
-- [ ] RLS-Test (`scripts/rls-test.ts`) auf 3 Tabellen/`trips` anpassen;
+- [x] RLS-Test (`scripts/rls-test.ts`) auf 3 Tabellen/`trips` anpassen;
     `npm run typecheck` + `npm test` + RLS-Proof grün.
-- [ ] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
+- [x] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
     auf `Trip`/2-stufig aktualisieren; „Roadbook = App-Name“ festhalten.
 
 ### P9 — Cross-Device-Fotos & reale Inbetriebnahme 🔄 (danach)
@@ -171,15 +171,18 @@ Modell: `User → viele Trips → Stops → Photos` (2-stufig, ohne `routes`).
 ---
 
 ## Stand
-MVP-Code vollständig umgesetzt (P0–P7). Headless verifiziert: `npm run typecheck`,
-`npm test` (25 Tests), `npm run lint` — alle grün. RLS-Isolationsbeweis läuft in CI.
+MVP-Code (P0–P7) + Datenmodell-Vereinfachung (P8) umgesetzt. Headless verifiziert:
+`npm run typecheck`, `npm test` (71 Tests), `npm run lint` — alle grün.
+RLS-Isolationsbeweis läuft in CI (lokal Docker durch Netzwerk-Policy blockiert).
 Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallback,
 Tombstone-RLS-Fix, globales Crash-Logging.
+P8: Modell auf 2-stufig (`Trip → Stop → Photo`), `roadbooks`/`routes` → `trips`,
+Migration `0005`, lokaler SQLite-Schema-Reset (PRAGMA user_version = 2).
 **Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
 R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
-**Migrations 0003 + 0004** sind im Cloud-Projekt bereits eingespielt. Die kommende
-Migration **0005** (P8, Route-Ebene entfernen) muss danach noch via
-`supabase db push` eingespielt werden.
+**Migrations 0003 + 0004** sind im Cloud-Projekt bereits eingespielt. Migration
+**0005** (P8) muss noch via `supabase db push` (oder SQL-Editor) eingespielt werden
+— danach ist 0004 obsolet (Route-Policies entfallen).
 
 ---
 

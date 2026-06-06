@@ -96,6 +96,14 @@ Ein **zentrales Backend für alle User** der App. Trennung der Verantwortlichkei
 
 ## 5. Datenmodell (Multi-Tenant ab Tag 1)
 
+> **⚠️ Stand der Umsetzung (PROGRESS P8):** Das Modell wurde gegenüber dem
+> ursprünglichen Entwurf unten **vereinfacht**. „Roadbook“ ist der **App-Name**,
+> kein Daten-Objekt; Top-Level-Entität ist der **`Trip`** (UI: „Reise“). Stops
+> hängen **direkt** am Trip — die `Route`-/`routes`-Zwischenebene wurde entfernt
+> (Migration `0005`). Hierarchie: `User → Trip → Stop → Photo`. Die `Route`-
+> Interfaces/RLS-Beispiele in diesem Abschnitt beschreiben den alten 3-stufigen
+> Entwurf; **maßgeblich ist der Code** (`src/types/models.ts`, `supabase/migrations/`).
+
 ### 5.1 Tabellen (vereinfacht)
 
 > **Konvention:** DB-Spalten in `snake_case` (z. B. `owner_id`, `updated_at`), TS-Felder in `camelCase`. Mapping im DB-Client. Alle Tabellen erben die Offline-/Sync-Felder aus `SyncBase` (s. §5.4).
