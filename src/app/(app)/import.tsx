@@ -13,7 +13,7 @@ import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { photoRepo, stopRepo, tripRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
-import { clearLog, readLog } from '@/lib/debug-log';
+import { clearLog, flushLog, logLine, readLog } from '@/lib/debug-log';
 import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib/geocoding';
 import { compressPhoto } from '@/lib/photos/compress';
 import { pickAndReadPhotos, type PickedPhoto } from '@/lib/photos/exif';
@@ -276,14 +276,21 @@ export default function ImportScreen() {
   );
 }
 
-/** Compress + upload one photo; mark the row uploaded/failed. Best-effort. */
+/** Compress + upload one photo; mark the row uploaded/failed. Best-effort, but
+ *  the outcome is logged so an upload failure (missing presign URL, 401/403/500)
+ *  is visible in the diagnostic log instead of being silently swallowed. */
 async function uploadInBackground(photoId: string, localUri: string): Promise<void> {
+  const short = photoId.slice(0, 8);
   try {
     const compressed = await compressPhoto(localUri);
     const url = await uploadPhotoToR2(compressed.uri, photoId);
     await photoRepo.setUploaded(photoId, url);
-  } catch {
+    logLine('R2:UPLOAD', `OK ${short}… → ${url}`);
+  } catch (e) {
     await photoRepo.setUploadStatus(photoId, 'failed');
+    logLine('R2:UPLOAD', `FEHLER ${short}…: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    void flushLog();
   }
 }
 
