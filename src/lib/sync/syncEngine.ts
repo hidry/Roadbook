@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { flushLog, logLine } from '@/lib/debug-log';
 import { nowIso } from '@/lib/util/id';
 
-const TABLES: EntityType[] = ['roadbooks', 'routes', 'stops', 'photos'];
+const TABLES: EntityType[] = ['trips', 'stops', 'photos'];
 const LAST_PULL_KEY = (t: EntityType) => `sync:lastPull:${t}`;
 
 /** Decode the JWT payload without verification (for logging only). */
@@ -34,7 +34,7 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 /** Local-only columns that must never be sent to the backend. */
 function toRemote(table: EntityType, row: Row): Record<string, unknown> {
   const { pending_sync: _pending, ...rest } = row;
-  if (table === 'roadbooks' && typeof rest.shared_with === 'string') {
+  if (table === 'trips' && typeof rest.shared_with === 'string') {
     // Local stores shared_with as JSON text; Postgres column is an array.
     try {
       return { ...rest, shared_with: JSON.parse(rest.shared_with) as string[] };
@@ -121,18 +121,18 @@ export async function pushPending(): Promise<void> {
     if (rows.length === 0) continue;
     const payload = rows.map((r) => toRemote(table, r));
 
-    // Log owner_id vs auth_uid for every pending roadbook so mismatches are
+    // Log owner_id vs auth_uid for every pending trip so mismatches are
     // immediately visible in the menu log without truncation.
-    if (table === 'roadbooks') {
+    if (table === 'trips') {
       for (const p of payload) {
         const oid = String((p as Record<string, unknown>).owner_id ?? '');
         const match = oid === uid ? 'OK' : 'MISMATCH';
-        logLine('SYNC:PUSH', `roadbook owner_id=${oid} auth_uid=${uid} [${match}]`);
+        logLine('SYNC:PUSH', `trip owner_id=${oid} auth_uid=${uid} [${match}]`);
       }
       // Drop rows that would fail the INSERT RLS `owner_id = auth.uid()` check.
       const filtered = payload.filter((p) => (p as Record<string, unknown>).owner_id === uid);
       if (filtered.length < payload.length) {
-        logLine('SYNC:PUSH', `${payload.length - filtered.length} Roadbook(s) übersprungen (owner_id ≠ auth_uid) — repairOwnership() aufrufen`);
+        logLine('SYNC:PUSH', `${payload.length - filtered.length} Trip(s) übersprungen (owner_id ≠ auth_uid) — repairOwnership() aufrufen`);
       }
       payload.splice(0, payload.length, ...filtered);
       if (payload.length === 0) continue;
@@ -229,23 +229,23 @@ export async function getPendingSyncCount(): Promise<number> {
 }
 
 /**
- * Re-assigns all local roadbooks whose owner_id doesn't match userId to userId
- * and marks them pending_sync = 1. Call this when the RLS push log shows
+ * Re-assigns all local trips whose owner_id doesn't match userId to userId and
+ * marks them pending_sync = 1. Call this when the RLS push log shows
  * "owner_id ≠ auth_uid" — it repairs data created under a different test
  * account or after a Supabase project reset.
  *
- * Returns the number of roadbooks that were fixed.
+ * Returns the number of trips that were fixed.
  */
 export async function repairOwnership(userId: string): Promise<number> {
   const db = getDb();
   const ts = nowIso();
   await db.runAsync(
-    `UPDATE roadbooks SET owner_id = ?, updated_at = ?, pending_sync = 1 WHERE owner_id != ?`,
+    `UPDATE trips SET owner_id = ?, updated_at = ?, pending_sync = 1 WHERE owner_id != ?`,
     [userId, ts, userId],
   );
   const result = await db.getFirstAsync<{ n: number }>('SELECT changes() AS n');
   const fixed = result?.n ?? 0;
-  logLine('SYNC:REPAIR', `owner_id korrigiert für ${fixed} Roadbook(s) → ${userId}`);
+  logLine('SYNC:REPAIR', `owner_id korrigiert für ${fixed} Trip(s) → ${userId}`);
   void flushLog();
   return fixed;
 }

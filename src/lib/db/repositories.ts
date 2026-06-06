@@ -4,19 +4,10 @@
  * to Supabase later. "Delete" is always a soft-delete (tombstone), never a hard
  * DELETE (README §5.4) — a real DSGVO hard-delete is a separate, explicit flow.
  */
-import type { Photo, Roadbook, Route, Stop, StopRole, StopType, UploadStatus } from '@/types/models';
+import type { Photo, Stop, StopRole, StopType, Trip, UploadStatus } from '@/types/models';
 import { newId, nowIso } from '@/lib/util/id';
 import { insertRow, selectRowById, selectRows, updateRow } from './crud';
-import {
-  photoToRow,
-  roadbookToRow,
-  routeToRow,
-  rowToPhoto,
-  rowToRoadbook,
-  rowToRoute,
-  rowToStop,
-  stopToRow,
-} from './mappers';
+import { photoToRow, rowToPhoto, rowToStop, rowToTrip, stopToRow, tripToRow } from './mappers';
 
 function newBase() {
   const ts = nowIso();
@@ -28,69 +19,51 @@ async function softDelete(table: string, id: string): Promise<void> {
   await updateRow(table, id, { deleted_at: ts, updated_at: ts });
 }
 
-// ── Roadbooks ─────────────────────────────────────────────────────────────────
-export const roadbookRepo = {
-  async list(): Promise<Roadbook[]> {
-    return (await selectRows('roadbooks')).map(rowToRoadbook);
+// ── Trips ─────────────────────────────────────────────────────────────────────
+export const tripRepo = {
+  async list(): Promise<Trip[]> {
+    return (await selectRows('trips')).map(rowToTrip);
   },
-  async get(id: string): Promise<Roadbook | null> {
-    const r = await selectRowById('roadbooks', id);
-    return r ? rowToRoadbook(r) : null;
+  async get(id: string): Promise<Trip | null> {
+    const r = await selectRowById('trips', id);
+    return r ? rowToTrip(r) : null;
   },
-  async create(input: { name: string; ownerId: string }): Promise<Roadbook> {
-    const model: Roadbook = { ...newBase(), name: input.name, ownerId: input.ownerId, sharedWith: [] };
-    await insertRow('roadbooks', roadbookToRow(model));
-    return model;
-  },
-  async rename(id: string, name: string): Promise<void> {
-    await updateRow('roadbooks', id, { name, updated_at: nowIso() });
-  },
-  async remove(id: string): Promise<void> {
-    await softDelete('roadbooks', id);
-  },
-};
-
-// ── Routes ────────────────────────────────────────────────────────────────────
-export const routeRepo = {
-  async listByRoadbook(roadbookId: string): Promise<Route[]> {
-    return (await selectRows('routes', 'roadbook_id = ?', [roadbookId])).map(rowToRoute);
-  },
-  async get(id: string): Promise<Route | null> {
-    const r = await selectRowById('routes', id);
-    return r ? rowToRoute(r) : null;
-  },
-  async create(input: { roadbookId: string; title: string; startDate?: string | null }): Promise<Route> {
-    const model: Route = {
+  async create(input: { name: string; ownerId: string; startDate?: string | null }): Promise<Trip> {
+    const model: Trip = {
       ...newBase(),
-      roadbookId: input.roadbookId,
-      title: input.title,
+      name: input.name,
+      ownerId: input.ownerId,
+      sharedWith: [],
       startDate: input.startDate ?? null,
     };
-    await insertRow('routes', routeToRow(model));
+    await insertRow('trips', tripToRow(model));
     return model;
   },
-  async update(id: string, patch: Partial<Pick<Route, 'title' | 'startDate'>>): Promise<void> {
+  async update(id: string, patch: Partial<Pick<Trip, 'name' | 'startDate'>>): Promise<void> {
     const row: Record<string, string | number | null> = { updated_at: nowIso() };
-    if (patch.title !== undefined) row.title = patch.title;
+    if (patch.name !== undefined) row.name = patch.name;
     if (patch.startDate !== undefined) row.start_date = patch.startDate;
-    await updateRow('routes', id, row);
+    await updateRow('trips', id, row);
+  },
+  async rename(id: string, name: string): Promise<void> {
+    await updateRow('trips', id, { name, updated_at: nowIso() });
   },
   async remove(id: string): Promise<void> {
-    await softDelete('routes', id);
+    await softDelete('trips', id);
   },
 };
 
 // ── Stops ─────────────────────────────────────────────────────────────────────
 export const stopRepo = {
-  async listByRoute(routeId: string): Promise<Stop[]> {
-    return (await selectRows('stops', 'route_id = ?', [routeId], 'position ASC')).map(rowToStop);
+  async listByTrip(tripId: string): Promise<Stop[]> {
+    return (await selectRows('stops', 'trip_id = ?', [tripId], 'position ASC')).map(rowToStop);
   },
   async get(id: string): Promise<Stop | null> {
     const r = await selectRowById('stops', id);
     return r ? rowToStop(r) : null;
   },
   async create(input: {
-    routeId: string;
+    tripId: string;
     position: number;
     role: StopRole;
     name: string;
@@ -102,7 +75,7 @@ export const stopRepo = {
   }): Promise<Stop> {
     const model: Stop = {
       ...newBase(),
-      routeId: input.routeId,
+      tripId: input.tripId,
       position: input.position,
       role: input.role,
       type: input.type ?? null,
