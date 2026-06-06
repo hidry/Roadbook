@@ -76,6 +76,45 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Menu-Screen (`src/app/(app)/menu.tsx`): Sync jetzt · Auth-Diagnose · Token erneuern · owner_id reparieren · Pending-Count-Anzeige · Diagnose-Log (Teilen/Löschen)
 - [x] Globales Exception-Handling: `ErrorBoundary`-Klassen-Komponente (React-Render-Fehler → `appendLog('RENDER:CRASH')`) + `ErrorUtils.setGlobalHandler` im Root-Layout (unkontrollierte JS-Exceptions → `appendLog('JS:CRASH')`) — beide landen im Menu-Diagnose-Log
 
+### P8 — Cross-Device-Fotos & reale Inbetriebnahme 🔄 (geplant)
+> Ausgangslage: R2-Upload + Metadaten-Sync sind im Code vorhanden, aber nie auf
+> echtem Gerät verifiziert — und Fotos erscheinen auf einem **zweiten** Gerät
+> (gleicher Account) noch NICHT, weil die Anzeige den gerätelokalen Pfad bevorzugt.
+
+**8a — Fotos cross-device verfügbar machen**
+- [ ] `local_uri` vom Sync ausschließen — gerätelokaler Pfad gehört nicht in die
+      DB/Backend (in `syncEngine.ts` `toRemote()` strippen, analog `pending_sync`)
+- [ ] Anzeige-Fallback korrigieren: lokale Datei nur nutzen, wenn sie **auf diesem
+      Gerät existiert**, sonst `storageUrl` (`stop/[id].tsx:133`/`:174` — heute
+      `localUri ?? storageUrl`, greift auf Gerät B den toten Pfad ab)
+- [ ] R2-Download + lokales Caching (sonst lädt Gerät B bei jedem Render neu und
+      hat offline kein Bild)
+- [ ] Upload-Retry für `upload_status = 'failed'` (heute best-effort beim Import,
+      kein Wiederholmechanismus) — z.B. im Background-Sync-Hook mit aufräumen
+- [ ] Verifikation auf echtem Gerät (R2-Bucket + Secrets nötig)
+
+**8b — Reale Inbetriebnahme** (bisher der größte offene Block, s. „Stand“)
+- [ ] Supabase-Cloud-Projekt + Migrations 0001–0004 einspielen (`supabase db push`)
+- [ ] R2-Bucket + Secrets (Edge-Function-Env: Account, Bucket, Keys)
+- [ ] EAS-Dev-Build (Custom Dev Client für expo-sqlite/MapLibre)
+- [ ] Gerätelauf-Verifikation: Picker/EXIF (ACCESS_MEDIA_LOCATION), MapLibre-Tiles,
+      Auth, Sync, Foto-Upload end-to-end + Zwei-Geräte-Test (8a)
+
+---
+
+## Offene Design-Entscheidung: Was ist ein „Roadbook“?
+Aktuell legt der Nutzer Roadbooks **pro Fahrzeug** an (Sunlight, Dethleffs). Das
+skaliert schlecht (alle Reisen eines Autos landen in einem Roadbook).
+- **Empfehlung:** Roadbook = **eine Reise** (z.B. „Norwegen 2025“) — deckt sich mit
+  dem Standard ähnlicher Apps (Polarsteps: mehrere „Trips“ pro Konto, je Reise eine
+  Route + Steps + Fotos + Zeitraum). Das vorhandene Schema
+  (`User → viele Roadbooks → Route → Stops → Photos`, `route.startDate`) trägt das
+  bereits.
+- **Fahrzeug** dann als optionales Attribut/Tag am Roadbook (oder später eigene
+  `vehicles`-Tabelle mit FK), um „alle Reisen mit dem Dethleffs“ filtern zu können.
+- „Ein Roadbook pro User“ wird **nicht** empfohlen (verliert die Trennung der Reisen).
+- Status: **noch nicht entschieden / nicht umgesetzt** — bewusst offen gehalten.
+
 ---
 
 ## Stand
