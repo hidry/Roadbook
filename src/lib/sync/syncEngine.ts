@@ -289,8 +289,19 @@ export async function pushPhotoUploads(): Promise<number> {
   return ok;
 }
 
+/** Guards against overlapping sync cycles. The background hook, manual "Sync
+ *  jetzt" and post-write triggers can all fire syncNow at once; running the
+ *  heavy photo-upload loop twice in parallel made expo-image-manipulator jobs
+ *  cancel each other ("renderAsync … cancelled"). */
+let syncInFlight = false;
+
 /** One full sync cycle. Best-effort: callers swallow errors when offline. */
 export async function syncNow(): Promise<void> {
+  if (syncInFlight) {
+    logLine('SYNC', 'Zyklus läuft bereits — übersprungen');
+    return;
+  }
+  syncInFlight = true;
   try {
     // 1) Supabase first: push local metadata changes up, then pull remote down.
     await pushPending();
@@ -303,6 +314,7 @@ export async function syncNow(): Promise<void> {
     logLine('SYNC', `Zyklus abgebrochen: ${e instanceof Error ? e.message : String(e)}`);
     throw e;
   } finally {
+    syncInFlight = false;
     void flushLog();
   }
 }

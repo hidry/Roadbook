@@ -4,6 +4,8 @@
  * it asks the `r2-presign` Edge Function (authenticated with the user's Supabase
  * JWT) for a short-lived presigned PUT URL, then uploads directly to R2.
  */
+import * as FileSystem from 'expo-file-system/legacy';
+
 import { supabase } from '@/lib/supabase';
 
 const PRESIGN_URL = process.env.EXPO_PUBLIC_R2_PRESIGN_URL;
@@ -36,16 +38,17 @@ export async function uploadPhotoToR2(localUri: string, photoId: string): Promis
   }
   const { uploadUrl, publicUrl } = (await presignRes.json()) as PresignResponse;
 
-  // 2) PUT the bytes straight to R2.
-  const fileRes = await fetch(localUri);
-  const blob = await fileRes.blob();
-  const putRes = await fetch(uploadUrl, {
-    method: 'PUT',
+  // 2) PUT the file's raw bytes straight to R2. We use expo-file-system's native
+  //    binary upload instead of fetch(blob): React Native's fetch cannot build a
+  //    Blob from a file URI ("Creating blobs from 'ArrayBuffer'… not supported"),
+  //    so a blob-based PUT always throws on device.
+  const result = await FileSystem.uploadAsync(uploadUrl, localUri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': 'image/jpeg' },
-    body: blob,
   });
-  if (!putRes.ok) {
-    throw new Error(`R2-Upload fehlgeschlagen (${putRes.status}).`);
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`R2-Upload fehlgeschlagen (${result.status}).`);
   }
 
   return publicUrl;
