@@ -76,12 +76,44 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Menu-Screen (`src/app/(app)/menu.tsx`): Sync jetzt · Auth-Diagnose · Token erneuern · owner_id reparieren · Pending-Count-Anzeige · Diagnose-Log (Teilen/Löschen)
 - [x] Globales Exception-Handling: `ErrorBoundary`-Klassen-Komponente (React-Render-Fehler → `appendLog('RENDER:CRASH')`) + `ErrorUtils.setGlobalHandler` im Root-Layout (unkontrollierte JS-Exceptions → `appendLog('JS:CRASH')`) — beide landen im Menu-Diagnose-Log
 
-### P8 — Cross-Device-Fotos & reale Inbetriebnahme 🔄 (geplant)
+### P8 — Datenmodell vereinfachen: Route-Ebene entfernen 🔄 (NÄCHSTES)
+> Entscheidung (s.u.): Roadbook = die Reise; Stops hängen direkt am Roadbook.
+> Die Zwischen-Ebene `routes` entfällt (Branchenstandard ist 2-stufig: Reise →
+> Stops, vgl. Polarsteps/Furkot/Roadie). **Keine relevanten Echtdaten vorhanden
+> → die Migration darf destruktiv sein und Alt-Daten löschen** (einfachster Weg).
+>
+> Zielmodell: `User → viele Roadbooks (= Reise) → Stops → Photos`.
+
+- [ ] Neue Migration `0005_collapse_routes.sql` (destruktiv ok):
+  - `routes`-Tabelle entfernen; `start_date` (und ggf. Titel-Bedarf) auf
+    `roadbooks` ziehen — `roadbook.name` ersetzt `route.title`
+  - `stops.route_id` → `stops.roadbook_id` (FK auf `roadbooks`, `on delete cascade`)
+  - Alt-Daten in `routes/stops/photos` löschen (kein Daten-Backfill nötig)
+- [ ] RLS neu fassen (`0002_rls.sql` ist Basis): `route_*`-Policies löschen; `stop_*`
+    und `photo_*` EXISTS-Ketten auf `stops.roadbook_id → roadbooks` verkürzen
+    (Join über `routes` raus). Migrations 0004 (route_insert-Fix) wird obsolet.
+- [ ] SQLite-Schema spiegeln (`src/lib/db/schema.ts`): `routes`-Tabelle + Indizes
+    raus, `stops.route_id` → `roadbook_id`, Indizes anpassen. SQLite lokal einfach
+    droppen & neu anlegen (keine Echtdaten) — Schema-Reset beim Start.
+- [ ] Typen/Mapper: `Route` + `EntityType 'routes'` aus `models.ts` entfernen,
+    `Stop.routeId` → `roadbookId`; `mappers.ts` anpassen; `roadbook` bekommt
+    `startDate`
+- [ ] Repositories: `routeRepo` entfernen/auflösen, `stopRepo.create` auf
+    `roadbookId` umstellen; Foto-Import (`import.tsx`) erzeugt Stops direkt am
+    Roadbook (kein Default-Route-Anlegen mehr)
+- [ ] Sync-Engine: `TABLES` von 4 auf 3 (`roadbooks`, `stops`, `photos`)
+- [ ] UI: `route/[id].tsx` auflösen; `roadbook/[id].tsx` zeigt direkt die Stops
+    (eine Navigationsebene weniger); Karten-/Listen-Screens auf `roadbookId` umstellen
+- [ ] RLS-Test (`scripts/rls-test.ts`) auf 3 Tabellen anpassen; `npm run typecheck`
+    + `npm test` + RLS-Proof grün
+- [ ] PROGRESS/README/CLAUDE-Hinweise auf 3-stufiges Modell aktualisieren
+
+### P9 — Cross-Device-Fotos & reale Inbetriebnahme 🔄 (danach)
 > Ausgangslage: R2-Upload + Metadaten-Sync sind im Code vorhanden, aber nie auf
 > echtem Gerät verifiziert — und Fotos erscheinen auf einem **zweiten** Gerät
 > (gleicher Account) noch NICHT, weil die Anzeige den gerätelokalen Pfad bevorzugt.
 
-**8a — Fotos cross-device verfügbar machen**
+**9a — Fotos cross-device verfügbar machen**
 - [ ] `local_uri` vom Sync ausschließen — gerätelokaler Pfad gehört nicht in die
       DB/Backend (in `syncEngine.ts` `toRemote()` strippen, analog `pending_sync`)
 - [ ] Anzeige-Fallback korrigieren: lokale Datei nur nutzen, wenn sie **auf diesem
@@ -93,27 +125,32 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       kein Wiederholmechanismus) — z.B. im Background-Sync-Hook mit aufräumen
 - [ ] Verifikation auf echtem Gerät (R2-Bucket + Secrets nötig)
 
-**8b — Reale Inbetriebnahme** (bisher der größte offene Block, s. „Stand“)
-- [ ] Supabase-Cloud-Projekt + Migrations 0001–0004 einspielen (`supabase db push`)
-- [ ] R2-Bucket + Secrets (Edge-Function-Env: Account, Bucket, Keys)
+**9b — Reale Inbetriebnahme** (bisher der größte offene Block, s. „Stand“)
+- [ ] Supabase-Cloud: Migrations bis 0005 einspielen (`supabase db push`).
+      0003 + 0004 sind bereits eingespielt; 0005 (P8) kommt neu dazu.
+- [ ] R2-Bucket bei **Cloudflare** anlegen (eigener Account, getrennt von Supabase;
+      Free-Tier 10 GB, kein Egress) + API-Token; Public-URL/Domain
+- [ ] R2-Secrets in der Edge Function setzen (`supabase secrets set`):
+      `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`,
+      `R2_PUBLIC_BASE_URL`
 - [ ] EAS-Dev-Build (Custom Dev Client für expo-sqlite/MapLibre)
 - [ ] Gerätelauf-Verifikation: Picker/EXIF (ACCESS_MEDIA_LOCATION), MapLibre-Tiles,
-      Auth, Sync, Foto-Upload end-to-end + Zwei-Geräte-Test (8a)
+      Auth, Sync, Foto-Upload end-to-end + Zwei-Geräte-Test (9a)
 
 ---
 
-## Offene Design-Entscheidung: Was ist ein „Roadbook“?
-Aktuell legt der Nutzer Roadbooks **pro Fahrzeug** an (Sunlight, Dethleffs). Das
-skaliert schlecht (alle Reisen eines Autos landen in einem Roadbook).
-- **Empfehlung:** Roadbook = **eine Reise** (z.B. „Norwegen 2025“) — deckt sich mit
-  dem Standard ähnlicher Apps (Polarsteps: mehrere „Trips“ pro Konto, je Reise eine
-  Route + Steps + Fotos + Zeitraum). Das vorhandene Schema
-  (`User → viele Roadbooks → Route → Stops → Photos`, `route.startDate`) trägt das
-  bereits.
-- **Fahrzeug** dann als optionales Attribut/Tag am Roadbook (oder später eigene
-  `vehicles`-Tabelle mit FK), um „alle Reisen mit dem Dethleffs“ filtern zu können.
-- „Ein Roadbook pro User“ wird **nicht** empfohlen (verliert die Trennung der Reisen).
-- Status: **noch nicht entschieden / nicht umgesetzt** — bewusst offen gehalten.
+## Design-Entscheidung: Was ist ein „Roadbook“? ✅ ENTSCHIEDEN
+**Roadbook = eine Reise** (z.B. „Frankreich Mai 2026“). Stops hängen **direkt** am
+Roadbook; die frühere Zwischen-Ebene `routes` wird entfernt (→ P8).
+- Begründung: Branchenstandard ist 2-stufig (Reise → Stations). Recherche:
+  Polarsteps (Trip → Steps), Furkot (Trip → Stops, Routenlinie implizit), Roadie
+  (Route → Stops). Keine dieser Apps hat eine erzwungene Zwischenebene; Gruppierung
+  vieler Reisen läuft dort über **Tags / Suche**, nicht über einen Eltern-Container.
+- „Ein Roadbook pro User“ und „ein Roadbook pro Fahrzeug (als Container)“ wurden
+  **verworfen**: ersteres verliert die Reise-Trennung, letzteres erzwingt eine
+  Pseudo-Navigationsebene.
+- **Fahrzeug-/Tag-Gruppierung** kommt später als Feature (Tags an der Reise, vgl.
+  Furkot), nicht als Hierarchie — s. Backlog unten.
 
 ---
 
@@ -124,8 +161,9 @@ Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallba
 Tombstone-RLS-Fix, globales Crash-Logging.
 **Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
 R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
-**Migrations 0003 + 0004** müssen im Cloud-Projekt einmalig eingespielt werden
-(via `supabase db push` oder Supabase SQL-Editor).
+**Migrations 0003 + 0004** sind im Cloud-Projekt bereits eingespielt. Die kommende
+Migration **0005** (P8, Route-Ebene entfernen) muss danach noch via
+`supabase db push` eingespielt werden.
 
 ---
 
@@ -133,6 +171,12 @@ R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
 Payment/Abo · Sharing-UI · Store-Submission · DSGVO-Volltexte · volle Sync-Engine
 (PowerSync/WatermelonDB) · §8.1-Backlog. Schema ist für Sharing & Offline-Sync
 bereits vorbereitet.
+
+## Zukunfts-Features (nach P8/P9)
+- **Tag-System für Reisen** (Backlog, nicht sofort): freie Tags an einem Roadbook,
+  inkl. **Fahrzeug** als Tag (z.B. „Dethleffs“, „Sunlight“) → Filter „alle Reisen
+  mit dem Dethleffs“. Vorbild Furkot (Tags statt Hierarchie). Ersetzt die früher
+  angedachte Fahrzeug-Ebene.
 
 ## Hinweise für die Fortsetzung nach Pause
 - Branch: `claude/app-ui-data-persistence-e96qb`
