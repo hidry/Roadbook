@@ -9,13 +9,14 @@ name: Android build · EAS cloud (uses build quota)
 # Kicks off a CLOUD EAS build of a standalone, internal-distribution Android
 # build you can install straight on a phone — no local Node/Metro/.env needed.
 #
-# The app's Supabase config does NOT come from a local .env here: it comes from
+# The app's Supabase/R2 config does NOT come from a local .env here: it comes from
 # EAS environment variables scoped to the build profile's environment (see the
 # "environment" field per profile in eas.json). For the default `preview`
 # profile set these on https://expo.dev (Project → Environment Variables,
 # environment = preview), as plain EXPO_PUBLIC_* values (they ship in the client
 # bundle and are protected by Supabase RLS, not by secrecy):
-#   EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY
+#   EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY,
+#   EXPO_PUBLIC_R2_PRESIGN_URL   (photo upload presign endpoint)
 #   (optional: EXPO_PUBLIC_MAP_STYLE_URL — leave unset for a blank basemap)
 #
 # The actual compile runs on EAS servers; this job only authenticates (via the
