@@ -105,7 +105,7 @@ export default function MenuScreen() {
       Alert.alert(
         'Reparatur abgeschlossen',
         fixed > 0
-          ? `${fixed} Roadbook(s) korrigiert und synchronisiert.`
+          ? `${fixed} Reise(n) korrigiert und synchronisiert.`
           : 'Kein Datensatz musste korrigiert werden.',
       );
     } catch (e) {

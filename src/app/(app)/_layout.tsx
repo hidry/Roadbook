@@ -20,9 +20,8 @@ export default function AppLayout() {
 
   return (
     <Stack screenOptions={{ headerShown: true }}>
-      <Stack.Screen name="index" options={{ title: 'Roadbooks' }} />
-      <Stack.Screen name="roadbook/[id]" options={{ title: 'Roadbook' }} />
-      <Stack.Screen name="route/[id]" options={{ title: 'Route' }} />
+      <Stack.Screen name="index" options={{ title: 'Reisen' }} />
+      <Stack.Screen name="trip/[id]" options={{ title: 'Reise' }} />
       <Stack.Screen name="stop/[id]" options={{ title: 'Stopp' }} />
       <Stack.Screen name="import" options={{ title: 'Foto-Import', presentation: 'modal' }} />
       <Stack.Screen name="menu" options={{ title: 'Menü' }} />

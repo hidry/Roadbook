@@ -8,9 +8,9 @@ import { RouteMap } from '@/components/MapView';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { routeRepo, stopRepo } from '@/lib/db/repositories';
+import { stopRepo, tripRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
-import type { Route, Stop, StopType } from '@/types/models';
+import type { Stop, StopType, Trip } from '@/types/models';
 
 const TYPE_LABEL: Record<StopType, string> = {
   campingplatz: 'Campingplatz',
@@ -22,21 +22,21 @@ function syncAfterWrite() {
   syncNow().catch((e) => console.warn('[sync] post-write:', e instanceof Error ? e.message : e));
 }
 
-export default function RouteScreen() {
+export default function TripScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [route, setRoute] = useState<Route | null>(null);
+  const [trip, setTrip] = useState<Trip | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [name, setName] = useState('');
-  const [routeTitle, setRouteTitle] = useState('');
+  const [tripName, setTripName] = useState('');
 
   const load = useCallback(async () => {
-    const r = await routeRepo.get(id);
-    setRoute(r);
-    if (r) setRouteTitle(r.title);
-    setStops(await stopRepo.listByRoute(id));
+    const t = await tripRepo.get(id);
+    setTrip(t);
+    if (t) setTripName(t.name);
+    setStops(await stopRepo.listByTrip(id));
   }, [id]);
 
   useFocusEffect(
@@ -50,7 +50,7 @@ export default function RouteScreen() {
     if (!trimmed) return;
     const position = stops.length;
     const role = position === 0 ? 'start' : 'stop';
-    await stopRepo.create({ routeId: id, position, role, name: trimmed, lat: 0, lng: 0 });
+    await stopRepo.create({ tripId: id, position, role, name: trimmed, lat: 0, lng: 0 });
     setName('');
     await load();
     syncAfterWrite();
@@ -71,11 +71,11 @@ export default function RouteScreen() {
     ]);
   }
 
-  async function saveTitle() {
-    const trimmed = routeTitle.trim();
-    if (!trimmed || trimmed === route?.title) return;
-    await routeRepo.update(id, { title: trimmed });
-    setRoute((r) => (r ? { ...r, title: trimmed } : r));
+  async function saveName() {
+    const trimmed = tripName.trim();
+    if (!trimmed || trimmed === trip?.name) return;
+    await tripRepo.rename(id, trimmed);
+    setTrip((t) => (t ? { ...t, name: trimmed } : t));
     syncAfterWrite();
   }
 
@@ -122,21 +122,27 @@ export default function RouteScreen() {
 
   const ListHeader = (
     <>
-      <Stack.Screen options={{ title: route?.title ?? 'Route' }} />
+      <Stack.Screen options={{ title: trip?.name ?? 'Reise' }} />
       <RouteMap stops={located} />
       <Card style={styles.headerCard}>
         <TextField
-          label="Routentitel"
-          value={routeTitle}
-          onChangeText={setRouteTitle}
-          onBlur={saveTitle}
-          placeholder="Titel der Route"
+          label="Reisetitel"
+          value={tripName}
+          onChangeText={setTripName}
+          onBlur={saveName}
+          placeholder="Titel der Reise"
         />
+        {trip?.startDate ? <ThemedText type="small">Start: {trip.startDate}</ThemedText> : null}
       </Card>
       <Card style={styles.headerCard}>
         <ThemedText type="smallBold">Stopp hinzufügen</ThemedText>
         <TextField placeholder="Name des Stopps" value={name} onChangeText={setName} onSubmitEditing={addStop} />
         <Button title="Hinzufügen" onPress={addStop} disabled={!name.trim()} />
+        <Button
+          title="📷 Stopps aus Fotos vorschlagen"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/import', params: { tripId: id } })}
+        />
       </Card>
     </>
   );
@@ -151,7 +157,7 @@ export default function RouteScreen() {
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={
           <ThemedText type="small" style={styles.empty}>
-            Noch keine Stopps.
+            Noch keine Stopps. Füge oben welche hinzu – oder importiere Fotos.
           </ThemedText>
         }
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + Spacing.three }]}
