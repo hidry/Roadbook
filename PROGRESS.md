@@ -76,37 +76,44 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Menu-Screen (`src/app/(app)/menu.tsx`): Sync jetzt · Auth-Diagnose · Token erneuern · owner_id reparieren · Pending-Count-Anzeige · Diagnose-Log (Teilen/Löschen)
 - [x] Globales Exception-Handling: `ErrorBoundary`-Klassen-Komponente (React-Render-Fehler → `appendLog('RENDER:CRASH')`) + `ErrorUtils.setGlobalHandler` im Root-Layout (unkontrollierte JS-Exceptions → `appendLog('JS:CRASH')`) — beide landen im Menu-Diagnose-Log
 
-### P8 — Datenmodell vereinfachen: Route-Ebene entfernen 🔄 (NÄCHSTES)
-> Entscheidung (s.u.): Roadbook = die Reise; Stops hängen direkt am Roadbook.
-> Die Zwischen-Ebene `routes` entfällt (Branchenstandard ist 2-stufig: Reise →
-> Stops, vgl. Polarsteps/Furkot/Roadie). **Keine relevanten Echtdaten vorhanden
-> → die Migration darf destruktiv sein und Alt-Daten löschen** (einfachster Weg).
+### P8 — Datenmodell vereinfachen + Umbenennung (`roadbook`→`trip`, Route-Ebene weg) 🔄 (NÄCHSTES)
+> **Namens-Entscheidung (s.u.):** „Roadbook“ ist der **App-Name** (die Sammlung von
+> Straßenreisen), kein Daten-Objekt. Das Top-Level-Objekt heißt **Trip** (UI: „Reise“).
+> Die heutige Tabelle `roadbooks` wird zu **`trips`** umbenannt. Stops hängen direkt
+> am Trip; die Zwischen-Ebene `routes` entfällt (Branchenstandard 2-stufig:
+> Reise → Stops, vgl. Polarsteps/Furkot/Roadie). **Keine relevanten Echtdaten →
+> Migration darf destruktiv sein und Alt-Daten löschen** (einfachster Weg).
 >
-> Zielmodell: `User → viele Roadbooks (= Reise) → Stops → Photos`.
+> Zielmodell: `User → viele Trips (= Reise) → Stops → Photos`.
+> Code/DB-Begriff = `trip`/`trips` (engl., wie `stops`/`photos`); UI-Text = „Reise“.
 
-- [ ] Neue Migration `0005_collapse_routes.sql` (destruktiv ok):
-  - `routes`-Tabelle entfernen; `start_date` (und ggf. Titel-Bedarf) auf
-    `roadbooks` ziehen — `roadbook.name` ersetzt `route.title`
-  - `stops.route_id` → `stops.roadbook_id` (FK auf `roadbooks`, `on delete cascade`)
-  - Alt-Daten in `routes/stops/photos` löschen (kein Daten-Backfill nötig)
-- [ ] RLS neu fassen (`0002_rls.sql` ist Basis): `route_*`-Policies löschen; `stop_*`
-    und `photo_*` EXISTS-Ketten auf `stops.roadbook_id → roadbooks` verkürzen
-    (Join über `routes` raus). Migrations 0004 (route_insert-Fix) wird obsolet.
-- [ ] SQLite-Schema spiegeln (`src/lib/db/schema.ts`): `routes`-Tabelle + Indizes
-    raus, `stops.route_id` → `roadbook_id`, Indizes anpassen. SQLite lokal einfach
-    droppen & neu anlegen (keine Echtdaten) — Schema-Reset beim Start.
-- [ ] Typen/Mapper: `Route` + `EntityType 'routes'` aus `models.ts` entfernen,
-    `Stop.routeId` → `roadbookId`; `mappers.ts` anpassen; `roadbook` bekommt
-    `startDate`
-- [ ] Repositories: `routeRepo` entfernen/auflösen, `stopRepo.create` auf
-    `roadbookId` umstellen; Foto-Import (`import.tsx`) erzeugt Stops direkt am
-    Roadbook (kein Default-Route-Anlegen mehr)
-- [ ] Sync-Engine: `TABLES` von 4 auf 3 (`roadbooks`, `stops`, `photos`)
-- [ ] UI: `route/[id].tsx` auflösen; `roadbook/[id].tsx` zeigt direkt die Stops
-    (eine Navigationsebene weniger); Karten-/Listen-Screens auf `roadbookId` umstellen
-- [ ] RLS-Test (`scripts/rls-test.ts`) auf 3 Tabellen anpassen; `npm run typecheck`
-    + `npm test` + RLS-Proof grün
-- [ ] PROGRESS/README/CLAUDE-Hinweise auf 3-stufiges Modell aktualisieren
+- [ ] Neue Migration `0005_collapse_to_trips.sql` (destruktiv ok):
+  - Tabelle `roadbooks` → **`trips`** umbenennen; `start_date` ergänzen
+    (`trip.name` ersetzt das frühere `route.title`)
+  - `routes`-Tabelle entfernen
+  - `stops.route_id` → `stops.trip_id` (FK auf `trips`, `on delete cascade`),
+    analog `idx`-Namen
+  - Alt-Daten in `stops/photos` löschen (kein Backfill nötig)
+- [ ] RLS neu fassen (`0002_rls.sql` ist Basis): Policies `roadbook_*`→`trip_*`,
+    `route_*` löschen; `stop_*`/`photo_*` EXISTS-Ketten auf `stops.trip_id → trips`
+    verkürzen (Join über `routes` raus). Migration 0004 (route_insert-Fix) wird obsolet.
+- [ ] SQLite-Schema (`src/lib/db/schema.ts`): `roadbooks`→`trips`, `routes` raus,
+    `stops.route_id`→`trip_id`, Indizes anpassen. SQLite lokal droppen & neu anlegen
+    (keine Echtdaten) — Schema-Reset beim Start.
+- [ ] Typen/Mapper (`models.ts`): `Roadbook`→**`Trip`** (+ `startDate`),
+    `Route` + `EntityType 'routes'` raus; `EntityType 'roadbooks'`→`'trips'`;
+    `Stop.routeId`→`tripId`; `mappers.ts` (snake↔camel) nachziehen.
+- [ ] Repositories (`repositories.ts`): `roadbookRepo`→`tripRepo`, `routeRepo`
+    entfernen, `stopRepo.create` auf `tripId`; Foto-Import (`import.tsx`) erzeugt
+    Stops direkt am Trip (kein Default-Route-Anlegen mehr).
+- [ ] Sync-Engine (`syncEngine.ts`): `TABLES` = `['trips','stops','photos']`;
+    Owner-ID-Filter/`repairOwnership` von `roadbooks` auf `trips` umstellen.
+- [ ] UI: `app/(app)/roadbook/[id].tsx` → `trip/[id].tsx` (zeigt direkt die Stops),
+    `route/[id].tsx` auflösen, Liste/Karte/Menu auf `tripId` + Label „Reise(n)“.
+- [ ] RLS-Test (`scripts/rls-test.ts`) auf 3 Tabellen/`trips` anpassen;
+    `npm run typecheck` + `npm test` + RLS-Proof grün.
+- [ ] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
+    auf `Trip`/2-stufig aktualisieren; „Roadbook = App-Name“ festhalten.
 
 ### P9 — Cross-Device-Fotos & reale Inbetriebnahme 🔄 (danach)
 > Ausgangslage: R2-Upload + Metadaten-Sync sind im Code vorhanden, aber nie auf
@@ -139,17 +146,26 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 
 ---
 
-## Design-Entscheidung: Was ist ein „Roadbook“? ✅ ENTSCHIEDEN
-**Roadbook = eine Reise** (z.B. „Frankreich Mai 2026“). Stops hängen **direkt** am
-Roadbook; die frühere Zwischen-Ebene `routes` wird entfernt (→ P8).
+## Begriffe & Datenmodell ✅ ENTSCHIEDEN
+**„Roadbook“ ist der App-Name** — die Sammlung von Straßenreisen, **kein**
+Daten-Objekt. Das Top-Level-Objekt ist der **Trip** (UI: „Reise“). Verbindliche
+Terminologie, um künftige Verwirrung zu vermeiden:
+
+| Ebene | Code/DB | UI (deutsch) |
+|------|---------|--------------|
+| App / Sammlung | — („Roadbook“ = Produktname) | Roadbook |
+| Top-Level-Objekt | `trip` / `trips` | Reise |
+| Station | `stop` / `stops` | Stopp |
+| Foto | `photo` / `photos` | Foto |
+
+Modell: `User → viele Trips → Stops → Photos` (2-stufig, ohne `routes`).
 - Begründung: Branchenstandard ist 2-stufig (Reise → Stations). Recherche:
   Polarsteps (Trip → Steps), Furkot (Trip → Stops, Routenlinie implizit), Roadie
   (Route → Stops). Keine dieser Apps hat eine erzwungene Zwischenebene; Gruppierung
   vieler Reisen läuft dort über **Tags / Suche**, nicht über einen Eltern-Container.
-- „Ein Roadbook pro User“ und „ein Roadbook pro Fahrzeug (als Container)“ wurden
-  **verworfen**: ersteres verliert die Reise-Trennung, letzteres erzwingt eine
-  Pseudo-Navigationsebene.
-- **Fahrzeug-/Tag-Gruppierung** kommt später als Feature (Tags an der Reise, vgl.
+- Verworfen: „ein Trip pro User“ (verliert Reise-Trennung) und „Fahrzeug als
+  Container-Ebene“ (erzwingt Pseudo-Navigationsebene).
+- **Fahrzeug-/Tag-Gruppierung** kommt später als Feature (Tags am Trip, vgl.
   Furkot), nicht als Hierarchie — s. Backlog unten.
 
 ---
@@ -173,7 +189,7 @@ Payment/Abo · Sharing-UI · Store-Submission · DSGVO-Volltexte · volle Sync-E
 bereits vorbereitet.
 
 ## Zukunfts-Features (nach P8/P9)
-- **Tag-System für Reisen** (Backlog, nicht sofort): freie Tags an einem Roadbook,
+- **Tag-System für Reisen** (Backlog, nicht sofort): freie Tags an einem **Trip**,
   inkl. **Fahrzeug** als Tag (z.B. „Dethleffs“, „Sunlight“) → Filter „alle Reisen
   mit dem Dethleffs“. Vorbild Furkot (Tags statt Hierarchie). Ersetzt die früher
   angedachte Fahrzeug-Ebene.
