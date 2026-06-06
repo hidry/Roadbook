@@ -1,36 +1,21 @@
-import {
-  photoToRow,
-  roadbookToRow,
-  routeToRow,
-  rowToPhoto,
-  rowToRoadbook,
-  rowToRoute,
-  rowToStop,
-  stopToRow,
-} from '@/lib/db/mappers';
-import type { Photo, Roadbook, Route, Stop } from '@/types/models';
+import { photoToRow, rowToPhoto, rowToStop, rowToTrip, stopToRow, tripToRow } from '@/lib/db/mappers';
+import type { Photo, Stop, Trip } from '@/types/models';
 
 const base = { id: 'id-1', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', deletedAt: null };
 
-describe('roadbook mapping', () => {
+describe('trip mapping', () => {
   it('round-trips and serialises sharedWith as JSON text', () => {
-    const rb: Roadbook = { ...base, ownerId: 'user-1', sharedWith: ['user-2'], name: 'Norwegen' };
-    const row = roadbookToRow(rb);
+    const t: Trip = { ...base, ownerId: 'user-1', sharedWith: ['user-2'], name: 'Norwegen', startDate: '2026-07-01' };
+    const row = tripToRow(t);
     expect(row.shared_with).toBe('["user-2"]');
     expect(row.owner_id).toBe('user-1');
-    expect(rowToRoadbook(row)).toEqual(rb);
+    expect(row.start_date).toBe('2026-07-01');
+    expect(rowToTrip(row)).toEqual(t);
   });
 
   it('tolerates missing/invalid shared_with on read', () => {
-    expect(rowToRoadbook({ ...rowBase(), owner_id: 'u', name: 'n', shared_with: null }).sharedWith).toEqual([]);
-    expect(rowToRoadbook({ ...rowBase(), owner_id: 'u', name: 'n', shared_with: 'not-json' }).sharedWith).toEqual([]);
-  });
-});
-
-describe('route mapping', () => {
-  it('round-trips snake_case <-> camelCase', () => {
-    const r: Route = { ...base, roadbookId: 'rb-1', title: 'Westküste', startDate: '2026-07-01' };
-    expect(rowToRoute(routeToRow(r))).toEqual(r);
+    expect(rowToTrip({ ...rowBase(), owner_id: 'u', name: 'n', shared_with: null }).sharedWith).toEqual([]);
+    expect(rowToTrip({ ...rowBase(), owner_id: 'u', name: 'n', shared_with: 'not-json' }).sharedWith).toEqual([]);
   });
 });
 
@@ -38,7 +23,7 @@ describe('stop mapping', () => {
   it('round-trips including numeric coordinates and nullable type', () => {
     const s: Stop = {
       ...base,
-      routeId: 'r-1',
+      tripId: 't-1',
       position: 2,
       role: 'stop',
       type: 'campingplatz',

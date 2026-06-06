@@ -5,7 +5,7 @@
  * The same shape is used for both SQLite rows and Supabase rows, since the
  * column names are identical by design.
  */
-import type { Photo, Roadbook, Route, Stop, StopRole, StopType, UploadStatus } from '@/types/models';
+import type { Photo, Stop, StopRole, StopType, Trip, UploadStatus } from '@/types/models';
 
 /** A raw DB row: string keys, primitive values (SQLite gives numbers/strings/null). */
 export type Row = Record<string, string | number | null>;
@@ -34,35 +34,38 @@ function baseFields(r: Row) {
   };
 }
 
-// ── Roadbook ──────────────────────────────────────────────────────────────────
-export function rowToRoadbook(r: Row): Roadbook {
+// ── Trip ──────────────────────────────────────────────────────────────────────
+export function rowToTrip(r: Row): Trip {
   let sharedWith: string[] = [];
   try {
     sharedWith = r.shared_with ? (JSON.parse(String(r.shared_with)) as string[]) : [];
   } catch {
     sharedWith = [];
   }
-  return { ...baseFields(r), ownerId: str(r.owner_id), sharedWith, name: str(r.name) };
+  return {
+    ...baseFields(r),
+    ownerId: str(r.owner_id),
+    sharedWith,
+    name: str(r.name),
+    startDate: strOrNull(r.start_date),
+  };
 }
 
-export function roadbookToRow(m: Roadbook): Row {
-  return { ...baseRow(m), owner_id: m.ownerId, shared_with: JSON.stringify(m.sharedWith ?? []), name: m.name };
-}
-
-// ── Route ─────────────────────────────────────────────────────────────────────
-export function rowToRoute(r: Row): Route {
-  return { ...baseFields(r), roadbookId: str(r.roadbook_id), title: str(r.title), startDate: strOrNull(r.start_date) };
-}
-
-export function routeToRow(m: Route): Row {
-  return { ...baseRow(m), roadbook_id: m.roadbookId, title: m.title, start_date: m.startDate };
+export function tripToRow(m: Trip): Row {
+  return {
+    ...baseRow(m),
+    owner_id: m.ownerId,
+    shared_with: JSON.stringify(m.sharedWith ?? []),
+    name: m.name,
+    start_date: m.startDate,
+  };
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────────
 export function rowToStop(r: Row): Stop {
   return {
     ...baseFields(r),
-    routeId: str(r.route_id),
+    tripId: str(r.trip_id),
     position: num(r.position),
     role: str(r.role) as StopRole,
     type: (strOrNull(r.type) as StopType | null) ?? null,
@@ -77,7 +80,7 @@ export function rowToStop(r: Row): Stop {
 export function stopToRow(m: Stop): Row {
   return {
     ...baseRow(m),
-    route_id: m.routeId,
+    trip_id: m.tripId,
     position: m.position,
     role: m.role,
     type: m.type,

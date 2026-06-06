@@ -24,20 +24,16 @@ export interface SyncBase {
   deletedAt: string | null; // soft-delete tombstone; NO hard delete in normal flow
 }
 
-export interface Roadbook extends SyncBase {
+/** Top-level object (UI: "Reise"). "Roadbook" is the app name, not an entity. */
+export interface Trip extends SyncBase {
   ownerId: string; // = auth.uid()
   sharedWith: string[]; // additional user ids (RLS-checked); Sharing-UI is Post-MVP
   name: string;
-}
-
-export interface Route extends SyncBase {
-  roadbookId: string;
-  title: string;
   startDate: string | null;
 }
 
 export interface Stop extends SyncBase {
-  routeId: string;
+  tripId: string;
   /** order within the route; [0]=start, [last]=end. NOT "order" (SQL keyword). */
   position: number;
   role: StopRole;
@@ -59,5 +55,5 @@ export interface Photo extends SyncBase {
   lng: number | null;
 }
 
-/** The four synced entity kinds, used by the generic sync engine. */
-export type EntityType = 'roadbooks' | 'routes' | 'stops' | 'photos';
+/** The synced entity kinds, used by the generic sync engine. */
+export type EntityType = 'trips' | 'stops' | 'photos';
