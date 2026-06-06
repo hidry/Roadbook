@@ -16,21 +16,18 @@ const SYNC_COLS = `
 `;
 
 export const CREATE_STATEMENTS: string[] = [
-  `CREATE TABLE IF NOT EXISTS roadbooks (
+// Model: User -> Trips (= Reise) -> Stops -> Photos. "Roadbook" is the app name,
+// not a table. Stops reference their trip directly (no intermediate `routes`).
+  `CREATE TABLE IF NOT EXISTS trips (
     ${SYNC_COLS},
     owner_id    TEXT NOT NULL,
     shared_with TEXT NOT NULL DEFAULT '[]',
-    name        TEXT NOT NULL
-  );`,
-  `CREATE TABLE IF NOT EXISTS routes (
-    ${SYNC_COLS},
-    roadbook_id TEXT NOT NULL,
-    title       TEXT NOT NULL,
+    name        TEXT NOT NULL,
     start_date  TEXT
   );`,
   `CREATE TABLE IF NOT EXISTS stops (
     ${SYNC_COLS},
-    route_id     TEXT NOT NULL,
+    trip_id      TEXT NOT NULL,
     position     INTEGER NOT NULL,
     role         TEXT NOT NULL,
     type         TEXT,
@@ -50,11 +47,28 @@ export const CREATE_STATEMENTS: string[] = [
     lat           REAL,
     lng           REAL
   );`,
-  `CREATE INDEX IF NOT EXISTS idx_routes_roadbook ON routes(roadbook_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_stops_route ON stops(route_id, position);`,
+  `CREATE INDEX IF NOT EXISTS idx_stops_trip ON stops(trip_id, position);`,
   `CREATE INDEX IF NOT EXISTS idx_photos_stop ON photos(stop_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_roadbooks_pending ON roadbooks(pending_sync);`,
-  `CREATE INDEX IF NOT EXISTS idx_routes_pending ON routes(pending_sync);`,
+  `CREATE INDEX IF NOT EXISTS idx_trips_pending ON trips(pending_sync);`,
   `CREATE INDEX IF NOT EXISTS idx_stops_pending ON stops(pending_sync);`,
   `CREATE INDEX IF NOT EXISTS idx_photos_pending ON photos(pending_sync);`,
+];
+
+/**
+ * On-device schema version. Bump when the local table shapes change. The DB init
+ * compares this against SQLite's `PRAGMA user_version` and, on a mismatch, drops
+ * the legacy tables so the new CREATE statements take effect. Safe because the
+ * local DB is a cache of Supabase — trips re-pull on the next sync.
+ *
+ * v2: collapse `routes` into `trips`; rename `roadbooks` -> `trips`;
+ *     `stops.route_id` -> `stops.trip_id` (PROGRESS P8).
+ */
+export const SCHEMA_VERSION = 2;
+
+/** Legacy tables to drop when migrating an existing on-device DB to v2. */
+export const LEGACY_DROP_STATEMENTS: string[] = [
+  `DROP TABLE IF EXISTS routes;`,
+  `DROP TABLE IF EXISTS roadbooks;`,
+  `DROP TABLE IF EXISTS stops;`,
+  `DROP TABLE IF EXISTS photos;`,
 ];

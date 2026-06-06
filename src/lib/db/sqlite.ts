@@ -13,7 +13,7 @@
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 
-import { CREATE_STATEMENTS } from './schema';
+import { CREATE_STATEMENTS, LEGACY_DROP_STATEMENTS, SCHEMA_VERSION } from './schema';
 
 const IS_WEB = Platform.OS === 'web';
 const DB_NAME = IS_WEB ? ':memory:' : 'roadbook.db';
@@ -42,6 +42,19 @@ export async function initDatabase(): Promise<void> {
     await dbInstance.execAsync('PRAGMA journal_mode = WAL;');
   }
   await dbInstance.execAsync('PRAGMA foreign_keys = ON;');
+
+  // Local schema migration: the on-device DB is a cache of Supabase, so on a
+  // schema-version bump we drop the legacy tables and recreate. No data loss
+  // that matters — trips re-pull on the next sync (PROGRESS P8: routes->trips).
+  const row = await dbInstance.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
+  const current = row?.user_version ?? 0;
+  if (current < SCHEMA_VERSION) {
+    for (const stmt of LEGACY_DROP_STATEMENTS) {
+      await dbInstance.execAsync(stmt);
+    }
+    await dbInstance.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+  }
+
   for (const stmt of CREATE_STATEMENTS) {
     await dbInstance.execAsync(stmt);
   }
