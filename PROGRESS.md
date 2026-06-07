@@ -195,6 +195,16 @@ bereits vorbereitet.
   inkl. **Fahrzeug** als Tag (z.B. „Dethleffs“, „Sunlight“) → Filter „alle Reisen
   mit dem Dethleffs“. Vorbild Furkot (Tags statt Hierarchie). Ersetzt die früher
   angedachte Fahrzeug-Ebene.
+- **Reise-Diashow / Wiedergabemodus** (Play-Button, README §8.1 Tier 2): Reise in
+  der App abspielen — Intro-Karte (Zeitraum, Tage, Stopps, km, Länder), dann Etappe
+  für Etappe mit Karten-Kamerafahrt (`flyTo`/`fitBounds`), progressiv wachsender
+  Routenlinie und Foto-Slides. Sequenz-Logik RN-frei in `src/lib/` (Jest-testbar);
+  Player-UI + Animation obendrauf. **Setzt auf Track-Geometrie auf:** Karte zeichnet
+  heute nur **Luftlinien** zwischen Stopps (`MapView.tsx`, `lineCoords`) → mit
+  **Tracks** aus GPX-/Google-Timeline-Import (internes Routenmodell, §8.1-Anker)
+  folgt die Linie der echten Strecke; Fallback bleibt Luftlinie. **Teilt die
+  Sequenz-Engine mit dem Reise-Story-Export** (In-App zuerst, MP4/Web-Link-Export
+  als Aufsatz).
 
 ## Hinweise für die Fortsetzung nach Pause
 - Branch: `claude/app-ui-data-persistence-e96qb`
