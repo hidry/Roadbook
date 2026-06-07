@@ -35,8 +35,11 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 }
 
 /** Local-only columns that must never be sent to the backend. */
+/** Local-only columns that must never be sent to the backend. `local_uri` is a
+ *  path on THIS device — meaningless (and misleading) on another, so a second
+ *  device falls back to `storage_url` for display. */
 function toRemote(table: EntityType, row: Row): Record<string, unknown> {
-  const { pending_sync: _pending, ...rest } = row;
+  const { pending_sync: _pending, local_uri: _localUri, ...rest } = row;
   if (table === 'trips' && typeof rest.shared_with === 'string') {
     // Local stores shared_with as JSON text; Postgres column is an array.
     try {
@@ -52,6 +55,10 @@ function toRemote(table: EntityType, row: Row): Record<string, unknown> {
 function toLocal(table: EntityType, row: Record<string, unknown>): Row {
   const out: Row = {};
   for (const [k, v] of Object.entries(row)) {
+    // Never let a remote `local_uri` overwrite this device's own value: it is a
+    // path on the *uploading* device. Pulled rows keep local_uri = NULL so the
+    // UI falls back to storage_url (the R2 URL); expo-image caches that.
+    if (k === 'local_uri') continue;
     if (k === 'shared_with') {
       out[k] = JSON.stringify(Array.isArray(v) ? v : []);
     } else if (v === null || typeof v === 'string' || typeof v === 'number') {
