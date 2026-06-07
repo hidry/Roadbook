@@ -115,34 +115,33 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
     auf `Trip`/2-stufig aktualisieren; „Roadbook = App-Name“ festhalten.
 
-### P9 — Cross-Device-Fotos & reale Inbetriebnahme 🔄 (danach)
-> Ausgangslage: R2-Upload + Metadaten-Sync sind im Code vorhanden, aber nie auf
-> echtem Gerät verifiziert — und Fotos erscheinen auf einem **zweiten** Gerät
-> (gleicher Account) noch NICHT, weil die Anzeige den gerätelokalen Pfad bevorzugt.
+### P9 — Cross-Device-Fotos & reale Inbetriebnahme ✅ (Code) / 🔄 (Zwei-Geräte-Test offen)
+> R2-Upload auf echtem Gerät verifiziert (49/49 hochgeladen, Bucket gefüllt,
+> `storage_url` zurücksynchronisiert). Cross-Device-Anzeige im Code gelöst;
+> finaler Zwei-Geräte-Test steht noch aus.
 
-**9a — Fotos cross-device verfügbar machen**
-- [ ] `local_uri` vom Sync ausschließen — gerätelokaler Pfad gehört nicht in die
-      DB/Backend (in `syncEngine.ts` `toRemote()` strippen, analog `pending_sync`)
-- [ ] Anzeige-Fallback korrigieren: lokale Datei nur nutzen, wenn sie **auf diesem
-      Gerät existiert**, sonst `storageUrl` (`stop/[id].tsx:133`/`:174` — heute
-      `localUri ?? storageUrl`, greift auf Gerät B den toten Pfad ab)
-- [ ] R2-Download + lokales Caching (sonst lädt Gerät B bei jedem Render neu und
-      hat offline kein Bild)
-- [ ] Upload-Retry für `upload_status = 'failed'` (heute best-effort beim Import,
-      kein Wiederholmechanismus) — z.B. im Background-Sync-Hook mit aufräumen
-- [ ] Verifikation auf echtem Gerät (R2-Bucket + Secrets nötig)
+**9a — Fotos cross-device verfügbar machen** ✅
+- [x] Upload in den Sync verlegt (Supabase-Metadaten zuerst, dann R2) — **ein**
+      Upload-Pfad, der zugleich als **Retry** für `pending`/`failed` dient
+      (`syncEngine.pushPhotoUploads`); Sync-Mutex gegen parallele Läufe
+- [x] R2-PUT-Bug gefixt: `FileSystem.uploadAsync` (BINARY_CONTENT) statt
+      `fetch(blob)` — RN kann aus einer `file://`-URI keinen Blob bauen
+- [x] `local_uri` als gerätelokal behandelt: weder pushen noch pullen
+      (`toRemote`/`toLocal`) → Gerät B fällt auf `storage_url` zurück
+- [x] Anzeige nutzt `localUri ?? storageUrl`; `expo-image` cached die R2-URL
+      (Memory+Disk) → kein erneuter Download je Render, offline nach 1. Laden
+- [x] Verifikation Upload auf echtem Gerät (49/49 OK)
+- [ ] Zwei-Geräte-Test: Foto auf Gerät B sichtbar (braucht öffentl. R2-Lesezugriff
+      via `R2_PUBLIC_BASE_URL` + neuen Build mit 9a)
 
-**9b — Reale Inbetriebnahme** (bisher der größte offene Block, s. „Stand“)
-- [ ] Supabase-Cloud: Migrations bis 0005 einspielen (`supabase db push`).
-      0003 + 0004 sind bereits eingespielt; 0005 (P8) kommt neu dazu.
-- [ ] R2-Bucket bei **Cloudflare** anlegen (eigener Account, getrennt von Supabase;
-      Free-Tier 10 GB, kein Egress) + API-Token; Public-URL/Domain
-- [ ] R2-Secrets in der Edge Function setzen (`supabase secrets set`):
-      `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`,
-      `R2_PUBLIC_BASE_URL`
-- [ ] EAS-Dev-Build (Custom Dev Client für expo-sqlite/MapLibre)
-- [ ] Gerätelauf-Verifikation: Picker/EXIF (ACCESS_MEDIA_LOCATION), MapLibre-Tiles,
-      Auth, Sync, Foto-Upload end-to-end + Zwei-Geräte-Test (9a)
+**9b — Reale Inbetriebnahme** ✅
+- [x] Supabase-Cloud: Migrations bis 0005 eingespielt
+- [x] R2-Bucket (Cloudflare) + API-Token (Object Read & Write) + Public-URL
+- [x] R2-Secrets in der Edge Function gesetzt
+- [x] Edge Function `r2-presign` deployt (+ CI-Workflow `supabase-functions.yml`)
+- [x] Installierbares APK via Runner-Build (`eas build --local`, Profil preview)
+- [x] Gerätelauf: Picker/EXIF, Auth, Sync, Foto-Upload end-to-end ✓
+- [ ] offen: MapLibre-Tiles (PMTiles), Zwei-Geräte-Test
 
 ---
 
