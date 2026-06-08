@@ -206,6 +206,22 @@ bereits vorbereitet.
   Sequenz-Engine mit dem Reise-Story-Export** (In-App zuerst, MP4/Web-Link-Export
   als Aufsatz).
 
+## Bekannte Limits der MVP-Sync-Engine
+- **Löschungen propagieren nicht per Pull auf bereits synchronisierte Geräte.**
+  Die SELECT-RLS filtert `deleted_at IS NULL` (`0002_rls.sql`), also liefert
+  `pullChanges` **keine Tombstones**. Folge: Ein Soft-Delete wird nur vom
+  *löschenden* Gerät hochgepusht; andere Geräte, die die Zeile schon lokal haben,
+  erfahren nichts und behalten sie. Aufräumen daher **immer in der App auf dem
+  Gerät, das die Zeile sieht** — nicht direkt in der Cloud (sonst bleibt die
+  lokale Kopie hängen). Echte Lösung gehört in die Post-MVP-Sync-Engine
+  (Tombstone-Sichtbarkeit / eigener „deleted“-Pull-Kanal mit `since`-Filter).
+- **Dubletten entstehen nicht durch Doppel-Sync** (alles dedupt über die
+  Client-UUID via `ON CONFLICT(id)`), sondern wenn dieselbe Reise unter **zwei
+  UUIDs** angelegt/gepusht wurde (z. B. Reinstall + Neuanlage in der Testphase).
+  Ein Frischgerät zieht ab Wasserstand `1970` **alles** und macht solche Cloud-
+  Dubletten als Erstes sichtbar. `SYNC:PULL`-Log (seit 2026-06) zeigt die Zeilen-
+  zahl pro Tabelle → Dublette sofort erkennbar.
+
 ## Hinweise für die Fortsetzung nach Pause
 - Branch: `claude/app-ui-data-persistence-e96qb`
 - Was läuft headless: `npm run typecheck`, `npm test`, lokal `npx supabase start` + RLS-Test.

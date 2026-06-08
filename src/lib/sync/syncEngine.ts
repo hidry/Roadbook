@@ -224,6 +224,10 @@ export async function pullChanges(): Promise<void> {
       if (u > maxUpdated) maxUpdated = u;
     }
     await AsyncStorage.setItem(LAST_PULL_KEY(table), maxUpdated);
+    // Log successful pulls too (not just errors): a fresh device pulling from the
+    // 1970 watermark shows e.g. "trips: 2" here, which immediately reveals a
+    // duplicate row in the cloud — otherwise the pull is silent and undiagnosable.
+    logLine('SYNC:PULL', `${table}: ${data.length} Zeile(n) gezogen (since ${since})`);
   }
 }
 
