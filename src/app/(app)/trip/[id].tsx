@@ -1,15 +1,16 @@
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from 'react-native-draggable-flatlist';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RouteMap } from '@/components/MapView';
 import { ThemedText } from '@/components/themed-text';
-import { Button, Card, Screen, TextField } from '@/components/ui';
+import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { stopRepo, tripRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
+import { normalizeHttpUrl } from '@/lib/util/url';
 import type { Stop, StopType, Trip } from '@/types/models';
 
 const TYPE_LABEL: Record<StopType, string> = {
@@ -32,11 +33,16 @@ export default function TripScreen() {
   const [stops, setStops] = useState<Stop[]>([]);
   const [name, setName] = useState('');
   const [tripName, setTripName] = useState('');
+  const [stravaInput, setStravaInput] = useState('');
+  const [stravaError, setStravaError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const t = await tripRepo.get(id);
     setTrip(t);
-    if (t) setTripName(t.name);
+    if (t) {
+      setTripName(t.name);
+      setStravaInput(t.stravaUrl ?? '');
+    }
     setStops(await stopRepo.listByTrip(id));
   }, [id]);
 
@@ -77,6 +83,20 @@ export default function TripScreen() {
     if (!trimmed || trimmed === trip?.name) return;
     await tripRepo.rename(id, trimmed);
     setTrip((t) => (t ? { ...t, name: trimmed } : t));
+    syncAfterWrite();
+  }
+
+  async function saveStravaUrl() {
+    setStravaError(null);
+    const normalized = normalizeHttpUrl(stravaInput);
+    if (stravaInput.trim() && !normalized) {
+      setStravaError('Kein gültiger Link (z. B. https://strava.com/activities/…).');
+      return;
+    }
+    if (normalized === (trip?.stravaUrl ?? null)) return;
+    await tripRepo.update(id, { stravaUrl: normalized });
+    setTrip((t) => (t ? { ...t, stravaUrl: normalized } : t));
+    setStravaInput(normalized ?? '');
     syncAfterWrite();
   }
 
@@ -134,6 +154,23 @@ export default function TripScreen() {
           placeholder="Titel der Reise"
         />
         {trip?.startDate ? <ThemedText type="small">Start: {trip.startDate}</ThemedText> : null}
+        <TextField
+          label="Strava-Link (optional)"
+          value={stravaInput}
+          onChangeText={setStravaInput}
+          onBlur={saveStravaUrl}
+          placeholder="https://strava.com/activities/…"
+          autoCapitalize="none"
+          keyboardType="url"
+        />
+        <ErrorText>{stravaError}</ErrorText>
+        {trip?.stravaUrl ? (
+          <Button
+            title="In Strava öffnen"
+            variant="secondary"
+            onPress={() => Linking.openURL(trip.stravaUrl!).catch(() => {})}
+          />
+        ) : null}
       </Card>
       <Card style={styles.headerCard}>
         <ThemedText type="smallBold">Stopp hinzufügen</ThemedText>

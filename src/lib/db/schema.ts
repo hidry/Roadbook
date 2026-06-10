@@ -23,7 +23,8 @@ export const CREATE_STATEMENTS: string[] = [
     owner_id    TEXT NOT NULL,
     shared_with TEXT NOT NULL DEFAULT '[]',
     name        TEXT NOT NULL,
-    start_date  TEXT
+    start_date  TEXT,
+    strava_url  TEXT
   );`,
   `CREATE TABLE IF NOT EXISTS stops (
     ${SYNC_COLS},
@@ -56,16 +57,33 @@ export const CREATE_STATEMENTS: string[] = [
 
 /**
  * On-device schema version. Bump when the local table shapes change. The DB init
- * compares this against SQLite's `PRAGMA user_version` and, on a mismatch, drops
- * the legacy tables so the new CREATE statements take effect. Safe because the
- * local DB is a cache of Supabase — trips re-pull on the next sync.
+ * compares this against SQLite's `PRAGMA user_version`:
+ * - coming from BEFORE v2 (or a fresh install): drop the legacy tables and
+ *   recreate — the v2 reshape (routes->trips) had no in-place path.
+ * - from v2 onwards: apply the ADDITIVE_MIGRATIONS steps in order. NEVER drop
+ *   tables here — `photos.local_uri` and not-yet-pushed rows are device-local
+ *   and would be lost (a re-pull does not restore them).
  *
  * v2: collapse `routes` into `trips`; rename `roadbooks` -> `trips`;
  *     `stops.route_id` -> `stops.trip_id` (PROGRESS P8).
+ * v3: `trips.strava_url` (Strava as a link, migration 0009).
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
-/** Legacy tables to drop when migrating an existing on-device DB to v2. */
+/** First version that can be migrated in place (additively). */
+export const FIRST_ADDITIVE_VERSION = 2;
+
+/**
+ * In-place migration steps, keyed by TARGET version: upgrading from v(n-1) to
+ * v(n) runs ADDITIVE_MIGRATIONS[n]. Keep every step additive (ALTER TABLE ...
+ * ADD COLUMN / CREATE TABLE/INDEX IF NOT EXISTS) and mirror it in a Supabase
+ * migration + CREATE_STATEMENTS above.
+ */
+export const ADDITIVE_MIGRATIONS: Record<number, string[]> = {
+  3: [`ALTER TABLE trips ADD COLUMN strava_url TEXT;`],
+};
+
+/** Legacy tables to drop when migrating an on-device DB from before v2. */
 export const LEGACY_DROP_STATEMENTS: string[] = [
   `DROP TABLE IF EXISTS routes;`,
   `DROP TABLE IF EXISTS roadbooks;`,

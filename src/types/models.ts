@@ -30,6 +30,8 @@ export interface Trip extends SyncBase {
   sharedWith: string[]; // additional user ids (RLS-checked); Sharing-UI is Post-MVP
   name: string;
   startDate: string | null;
+  /** Strava share link (plain string — no API integration by design, README §8.1). */
+  stravaUrl: string | null;
 }
 
 export interface Stop extends SyncBase {

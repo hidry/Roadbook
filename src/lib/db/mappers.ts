@@ -48,6 +48,7 @@ export function rowToTrip(r: Row): Trip {
     sharedWith,
     name: str(r.name),
     startDate: strOrNull(r.start_date),
+    stravaUrl: strOrNull(r.strava_url),
   };
 }
 
@@ -58,6 +59,7 @@ export function tripToRow(m: Trip): Row {
     shared_with: JSON.stringify(m.sharedWith ?? []),
     name: m.name,
     start_date: m.startDate,
+    strava_url: m.stravaUrl,
   };
 }
 

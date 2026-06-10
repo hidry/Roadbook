@@ -206,6 +206,25 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       Foto-Import — überall Label „Ver-/Entsorgung"
 - [x] Mapper-Roundtrip-Test für den neuen Typ
 
+### P13 — Tier-1-Feature: Strava als Link ✅
+> README §8.1 Tier 1: bewusst **nur ein String-Feld** am Trip (ToS-sicher, keine
+> Strava-API; Vollintegration ist verworfen). Teilen-Link/QR gibt auch private
+> Aktivitäten gezielt frei.
+
+- [x] Migration `0009_trip_strava_url.sql`: `trips.strava_url text`
+- [x] **Lokale SQLite-Migration jetzt additiv** (`SCHEMA_VERSION = 3`):
+      `ADDITIVE_MIGRATIONS` in `schema.ts` + In-Place-Runner in `sqlite.ts`.
+      Vorher hätte jeder Versions-Bump die Tabellen gedroppt — das hätte
+      `photos.local_uri` und noch nicht gepushte Zeilen vernichtet (Re-Pull
+      stellt beides nicht wieder her). Drop-Pfad bleibt nur für < v2.
+- [x] `Trip.stravaUrl` (models/mappers/repositories) + Mapper-Tests
+      (inkl. Abwärtskompatibilität: Zeile ohne `strava_url` → null)
+- [x] `normalizeHttpUrl` (`src/lib/util/url.ts`, PURE): trimmt, ergänzt
+      `https://`, lehnt Nicht-http(s)-Schemes und Freitext ab (Wert landet in
+      `Linking.openURL`) — Unit-Tests in `__tests__/url.test.ts`
+- [x] UI Trip-Screen: Eingabefeld (Speichern bei Blur, Validierungsfehler
+      inline) + „In Strava öffnen"-Button
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -249,7 +268,7 @@ Migration `0006`) + P11 R2-Lösch-Lebenszyklus (GC: Edge Function `r2-gc` +
 Migration `0007` + Cron `r2-gc.yml`).
 **Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
-Ver-/Entsorgungs-Stopp-Typ → Strava-Link → Wetter pro Stopp → internes
+Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → Wetter pro Stopp → internes
 Routenmodell + GPX/KML-Import (Architektur-Anker) → Tags → Reise-Diashow.
 
 ---
