@@ -24,7 +24,8 @@ export const CREATE_STATEMENTS: string[] = [
     shared_with TEXT NOT NULL DEFAULT '[]',
     name        TEXT NOT NULL,
     start_date  TEXT,
-    strava_url  TEXT
+    strava_url  TEXT,
+    tags        TEXT NOT NULL DEFAULT '[]'
   );`,
   `CREATE TABLE IF NOT EXISTS stops (
     ${SYNC_COLS},
@@ -79,8 +80,9 @@ export const CREATE_STATEMENTS: string[] = [
  * v2: collapse `routes` into `trips`; rename `roadbooks` -> `trips`;
  *     `stops.route_id` -> `stops.trip_id` (PROGRESS P8).
  * v3: `trips.strava_url` (Strava as a link, migration 0009).
+ * v4: `trips.tags` (tag system incl. vehicle, migration 0011).
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** First version that can be migrated in place (additively). */
 export const FIRST_ADDITIVE_VERSION = 2;
@@ -93,6 +95,7 @@ export const FIRST_ADDITIVE_VERSION = 2;
  */
 export const ADDITIVE_MIGRATIONS: Record<number, string[]> = {
   3: [`ALTER TABLE trips ADD COLUMN strava_url TEXT;`],
+  4: [`ALTER TABLE trips ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';`],
 };
 
 /** Legacy tables to drop when migrating an on-device DB from before v2. */

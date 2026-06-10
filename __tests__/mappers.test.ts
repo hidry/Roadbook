@@ -12,17 +12,21 @@ describe('trip mapping', () => {
       name: 'Norwegen',
       startDate: '2026-07-01',
       stravaUrl: 'https://www.strava.com/activities/123',
+      tags: ['Dethleffs', 'Sommer'],
     };
     const row = tripToRow(t);
     expect(row.shared_with).toBe('["user-2"]');
     expect(row.owner_id).toBe('user-1');
     expect(row.start_date).toBe('2026-07-01');
     expect(row.strava_url).toBe('https://www.strava.com/activities/123');
+    expect(row.tags).toBe('["Dethleffs","Sommer"]');
     expect(rowToTrip(row)).toEqual(t);
   });
 
-  it('maps a missing strava_url to null (pre-0009 rows)', () => {
-    expect(rowToTrip({ ...rowBase(), owner_id: 'u', name: 'n', shared_with: '[]' }).stravaUrl).toBeNull();
+  it('maps missing strava_url/tags to null/[] (pre-0009/0011 rows)', () => {
+    const t = rowToTrip({ ...rowBase(), owner_id: 'u', name: 'n', shared_with: '[]' });
+    expect(t.stravaUrl).toBeNull();
+    expect(t.tags).toEqual([]);
   });
 
   it('tolerates missing/invalid shared_with on read', () => {

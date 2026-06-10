@@ -36,15 +36,17 @@ export const tripRepo = {
       sharedWith: [],
       startDate: input.startDate ?? null,
       stravaUrl: null,
+      tags: [],
     };
     await insertRow('trips', tripToRow(model));
     return model;
   },
-  async update(id: string, patch: Partial<Pick<Trip, 'name' | 'startDate' | 'stravaUrl'>>): Promise<void> {
+  async update(id: string, patch: Partial<Pick<Trip, 'name' | 'startDate' | 'stravaUrl' | 'tags'>>): Promise<void> {
     const row: Record<string, string | number | null> = { updated_at: nowIso() };
     if (patch.name !== undefined) row.name = patch.name;
     if (patch.startDate !== undefined) row.start_date = patch.startDate;
     if (patch.stravaUrl !== undefined) row.strava_url = patch.stravaUrl;
+    if (patch.tags !== undefined) row.tags = JSON.stringify(patch.tags);
     await updateRow('trips', id, row);
   },
   async rename(id: string, name: string): Promise<void> {

@@ -32,6 +32,9 @@ export interface Trip extends SyncBase {
   startDate: string | null;
   /** Strava share link (plain string — no API integration by design, README §8.1). */
   stravaUrl: string | null;
+  /** Free-form tags incl. the vehicle (e.g. "Dethleffs") — grouping runs via
+   *  tags, not via a parent container (PROGRESS "Begriffe & Datenmodell"). */
+  tags: string[];
 }
 
 export interface Stop extends SyncBase {

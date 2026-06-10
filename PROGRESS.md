@@ -296,6 +296,22 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       Module → neuer Dev-Client-/EAS-Build nötig** (wie MapLibre/SQLite)
 - [⏳] Gerätelauf (Picker/Share-Sheet) steht aus — headless nicht testbar
 
+### P18 — Tag-System für Reisen (inkl. Fahrzeug als Tag) ✅
+> Aus „Zukunfts-Features": freie Tags am Trip statt Hierarchie-Ebene (Vorbild
+> Furkot); Fahrzeug ist ein Tag (z. B. „Dethleffs") → Filter „alle Reisen mit
+> dem Dethleffs".
+
+- [x] Migration `0011_trip_tags.sql`: `trips.tags text[] default '{}'`;
+      lokal JSON-TEXT (Muster wie `shared_with`), `SCHEMA_VERSION = 4`
+      (additiver ALTER), Sync-Konvertierung Array↔JSON verallgemeinert
+      (`TRIP_ARRAY_COLS`)
+- [x] `Trip.tags` durch models/mappers (`stringArray`-Helper)/repositories
+- [x] `src/lib/util/tags.ts` (PURE): `parseTagInput` (Komma, trim, dedupe
+      case-insensitiv), `formatTags`, `collectTags` (A–Z), `hasTag` —
+      mit Unit-Tests
+- [x] UI: Tags-Feld im Trip-Screen (Blur-Save); Reise-Liste mit
+      Tag-Chips zum Filtern (Toggle) + Tags auf der Reise-Karte
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -341,7 +357,7 @@ Migration `0007` + Cron `r2-gc.yml`).
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
 Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
 ✅ P15 internes Routenmodell + GPX/KML-Adapter → ✅ P16 Track-Persistenz + Karte →
-✅ P17 Import-/Export-UI → Tags → Reise-Diashow.
+✅ P17 Import-/Export-UI → ✅ P18 Tags → Reise-Diashow.
 
 ---
 
@@ -351,10 +367,8 @@ Payment/Abo · Sharing-UI · Store-Submission · DSGVO-Volltexte · volle Sync-E
 bereits vorbereitet.
 
 ## Zukunfts-Features (nach P8/P9)
-- **Tag-System für Reisen** (Backlog, nicht sofort): freie Tags an einem **Trip**,
-  inkl. **Fahrzeug** als Tag (z.B. „Dethleffs“, „Sunlight“) → Filter „alle Reisen
-  mit dem Dethleffs“. Vorbild Furkot (Tags statt Hierarchie). Ersetzt die früher
-  angedachte Fahrzeug-Ebene.
+- ✅ **Tag-System für Reisen** — umgesetzt in P18 (Migration `0011`, Tag-Chips
+  in der Reise-Liste; Fahrzeug als Tag statt Hierarchie-Ebene, Vorbild Furkot).
 - **Reise-Diashow / Wiedergabemodus** (Play-Button, README §8.1 Tier 2): Reise in
   der App abspielen — Intro-Karte (Zeitraum, Tage, Stopps, km, Länder), dann Etappe
   für Etappe mit Karten-Kamerafahrt (`flyTo`/`fitBounds`), progressiv wachsender

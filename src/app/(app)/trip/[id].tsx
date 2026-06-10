@@ -21,6 +21,7 @@ import {
   tracksFromModel,
 } from '@/lib/route-model';
 import { syncNow } from '@/lib/sync/syncEngine';
+import { formatTags, parseTagInput } from '@/lib/util/tags';
 import { normalizeHttpUrl } from '@/lib/util/url';
 import type { Stop, StopType, Track, Trip } from '@/types/models';
 
@@ -47,6 +48,7 @@ export default function TripScreen() {
   const [tripName, setTripName] = useState('');
   const [stravaInput, setStravaInput] = useState('');
   const [stravaError, setStravaError] = useState<string | null>(null);
+  const [tagsInput, setTagsInput] = useState('');
 
   const load = useCallback(async () => {
     const t = await tripRepo.get(id);
@@ -54,6 +56,7 @@ export default function TripScreen() {
     if (t) {
       setTripName(t.name);
       setStravaInput(t.stravaUrl ?? '');
+      setTagsInput(formatTags(t.tags));
     }
     setStops(await stopRepo.listByTrip(id));
     setTracks(await trackRepo.listByTrip(id));
@@ -96,6 +99,15 @@ export default function TripScreen() {
     if (!trimmed || trimmed === trip?.name) return;
     await tripRepo.rename(id, trimmed);
     setTrip((t) => (t ? { ...t, name: trimmed } : t));
+    syncAfterWrite();
+  }
+
+  async function saveTags() {
+    const tags = parseTagInput(tagsInput);
+    if (JSON.stringify(tags) === JSON.stringify(trip?.tags ?? [])) return;
+    await tripRepo.update(id, { tags });
+    setTrip((t) => (t ? { ...t, tags } : t));
+    setTagsInput(formatTags(tags));
     syncAfterWrite();
   }
 
@@ -227,6 +239,14 @@ export default function TripScreen() {
           placeholder="Titel der Reise"
         />
         {trip?.startDate ? <ThemedText type="small">Start: {trip.startDate}</ThemedText> : null}
+        <TextField
+          label="Tags (Komma-getrennt, z. B. Dethleffs, Sommer)"
+          value={tagsInput}
+          onChangeText={setTagsInput}
+          onBlur={saveTags}
+          placeholder="Dethleffs, Sommer"
+          autoCapitalize="none"
+        />
         <TextField
           label="Strava-Link (optional)"
           value={stravaInput}

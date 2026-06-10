@@ -44,15 +44,22 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 /** Local-only columns that must never be sent to the backend. `local_uri` is a
  *  path on THIS device — meaningless (and misleading) on another, so a second
  *  device falls back to `storage_url` for display. */
+/** Trip columns stored locally as JSON text but as real arrays in Postgres. */
+const TRIP_ARRAY_COLS = ['shared_with', 'tags'] as const;
+
 function toRemote(table: EntityType, row: Row): Record<string, unknown> {
   const { pending_sync: _pending, local_uri: _localUri, ...rest } = row;
-  if (table === 'trips' && typeof rest.shared_with === 'string') {
-    // Local stores shared_with as JSON text; Postgres column is an array.
-    try {
-      return { ...rest, shared_with: JSON.parse(rest.shared_with) as string[] };
-    } catch {
-      return { ...rest, shared_with: [] };
+  if (table === 'trips') {
+    const out: Record<string, unknown> = { ...rest };
+    for (const col of TRIP_ARRAY_COLS) {
+      if (typeof out[col] !== 'string') continue;
+      try {
+        out[col] = JSON.parse(out[col] as string) as string[];
+      } catch {
+        out[col] = [];
+      }
     }
+    return out;
   }
   return rest;
 }
@@ -65,7 +72,7 @@ function toLocal(table: EntityType, row: Record<string, unknown>): Row {
     // path on the *uploading* device. Pulled rows keep local_uri = NULL so the
     // UI falls back to storage_url (the R2 URL); expo-image caches that.
     if (k === 'local_uri') continue;
-    if (k === 'shared_with') {
+    if (k === 'shared_with' || k === 'tags') {
       out[k] = JSON.stringify(Array.isArray(v) ? v : []);
     } else if (v === null || typeof v === 'string' || typeof v === 'number') {
       out[k] = v;

@@ -35,20 +35,25 @@ function baseFields(r: Row) {
 }
 
 // ── Trip ──────────────────────────────────────────────────────────────────────
-export function rowToTrip(r: Row): Trip {
-  let sharedWith: string[] = [];
+/** Parses a JSON-text string-array column; anything broken becomes []. */
+function stringArray(v: string | number | null): string[] {
   try {
-    sharedWith = r.shared_with ? (JSON.parse(String(r.shared_with)) as string[]) : [];
+    const parsed: unknown = v ? JSON.parse(String(v)) : [];
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
   } catch {
-    sharedWith = [];
+    return [];
   }
+}
+
+export function rowToTrip(r: Row): Trip {
   return {
     ...baseFields(r),
     ownerId: str(r.owner_id),
-    sharedWith,
+    sharedWith: stringArray(r.shared_with),
     name: str(r.name),
     startDate: strOrNull(r.start_date),
     stravaUrl: strOrNull(r.strava_url),
+    tags: stringArray(r.tags),
   };
 }
 
@@ -60,6 +65,7 @@ export function tripToRow(m: Trip): Row {
     name: m.name,
     start_date: m.startDate,
     strava_url: m.stravaUrl,
+    tags: JSON.stringify(m.tags ?? []),
   };
 }
 
