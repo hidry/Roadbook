@@ -1,5 +1,5 @@
-import { photoToRow, rowToPhoto, rowToStop, rowToTrip, stopToRow, tripToRow } from '@/lib/db/mappers';
-import type { Photo, Stop, Trip } from '@/types/models';
+import { photoToRow, rowToPhoto, rowToStop, rowToTrack, rowToTrip, stopToRow, trackToRow, tripToRow } from '@/lib/db/mappers';
+import type { Photo, Stop, Track, Trip } from '@/types/models';
 
 const base = { id: 'id-1', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', deletedAt: null };
 
@@ -80,6 +80,28 @@ describe('photo mapping', () => {
       lng: null,
     };
     expect(rowToPhoto(photoToRow(p))).toEqual(p);
+  });
+});
+
+describe('track mapping', () => {
+  it('round-trips points as JSON text (same column both DBs, migration 0010)', () => {
+    const t: Track = {
+      ...base,
+      tripId: 'trip-1',
+      name: 'Etappe 1',
+      points: [
+        { lat: 60.39, lng: 5.32, time: '2025-08-01T10:00:00Z', ele: 12.5 },
+        { lat: 60.5, lng: 5.5, time: null, ele: null },
+      ],
+    };
+    const row = trackToRow(t);
+    expect(typeof row.points).toBe('string');
+    expect(rowToTrack(row)).toEqual(t);
+  });
+
+  it('tolerates missing/invalid points JSON on read', () => {
+    expect(rowToTrack({ ...rowBase(), trip_id: 't', name: null, points: null }).points).toEqual([]);
+    expect(rowToTrack({ ...rowBase(), trip_id: 't', name: null, points: 'kaputt' }).points).toEqual([]);
   });
 });
 

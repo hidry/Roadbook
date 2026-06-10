@@ -5,7 +5,7 @@
  * The same shape is used for both SQLite rows and Supabase rows, since the
  * column names are identical by design.
  */
-import type { Photo, Stop, StopRole, StopType, Trip, UploadStatus } from '@/types/models';
+import type { Photo, Stop, StopRole, StopType, Track, TrackGeoPoint, Trip, UploadStatus } from '@/types/models';
 
 /** A raw DB row: string keys, primitive values (SQLite gives numbers/strings/null). */
 export type Row = Record<string, string | number | null>;
@@ -118,5 +118,31 @@ export function photoToRow(m: Photo): Row {
     taken_at: m.takenAt,
     lat: m.lat,
     lng: m.lng,
+  };
+}
+
+// ── Track ─────────────────────────────────────────────────────────────────────
+export function rowToTrack(r: Row): Track {
+  let points: TrackGeoPoint[] = [];
+  try {
+    const parsed: unknown = r.points ? JSON.parse(String(r.points)) : [];
+    if (Array.isArray(parsed)) points = parsed as TrackGeoPoint[];
+  } catch {
+    points = [];
+  }
+  return {
+    ...baseFields(r),
+    tripId: str(r.trip_id),
+    name: strOrNull(r.name),
+    points,
+  };
+}
+
+export function trackToRow(m: Track): Row {
+  return {
+    ...baseRow(m),
+    trip_id: m.tripId,
+    name: m.name,
+    points: JSON.stringify(m.points ?? []),
   };
 }

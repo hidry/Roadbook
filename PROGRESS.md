@@ -258,8 +258,27 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       `parseRouteFile`-Dispatch mit deutschen Fehlermeldungen
 - [x] Dependency: `fast-xml-parser` (pure JS, RN-tauglich, kein DOM nötig)
 - [x] 12 Unit-Tests inkl. Roundtrips (auch XML-Escaping `&`) — grün
-- [ ] Folgeschritte: Track-Persistenz (`tracks`-Tabelle) + Karte zeichnet
-      Tracks (P16), Import-/Export-UI (P17)
+- [x] Folgeschritte: Track-Persistenz (`tracks`-Tabelle) + Karte zeichnet
+      Tracks (P16 ✅), Import-/Export-UI (P17)
+
+### P16 — Track-Persistenz + Karte zeichnet echte Strecken ✅ (Code) / ⏳ (RLS via CI)
+> Tracks = die echte gefahrene Strecke (aus GPX/KML, später Timeline). Damit
+> zeichnet die Karte die reale Route statt Luftlinien; die Diashow-Kamera (§8.1)
+> kann später der Straße folgen.
+
+- [x] Migration `0010_tracks.sql`: Tabelle `tracks` (SyncBase + `trip_id` +
+      `name` + `points` als **JSON-TEXT** — gleiche Spaltenform in beiden DBs,
+      Sync schiebt sie 1:1 ohne Konvertierung) + RLS (gleiche EXISTS-Kette wie
+      Stops) + `pull_tombstones` um `tracks` erweitert
+- [x] Lokal: `CREATE TABLE tracks` in `schema.ts` — **kein** Versions-Bump
+      nötig (CREATE IF NOT EXISTS läuft bei jedem Start)
+- [x] `Track`/`TrackGeoPoint` in models, `rowToTrack`/`trackToRow` (Parse mit
+      []-Fallback), `trackRepo` (listByTrip/create/remove), Sync-`TABLES` +
+      Tombstone-Whitelist um `tracks` erweitert
+- [x] Karte (`RouteMap`): zeichnet Tracks als Linien; Luftlinie nur noch als
+      **gestrichelter Fallback** ohne Tracks; Kamera-Bounds über Stops+Tracks
+- [x] Tests: Track-Mapper-Roundtrip + Fallback, Tombstone-Gruppierung mit
+      `tracks`; RLS-Test +3 Checks (Insert eigene/fremde, fremdes SELECT)
 
 ---
 
@@ -305,7 +324,7 @@ Migration `0007` + Cron `r2-gc.yml`).
 **Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
 Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
-✅ P15 internes Routenmodell + GPX/KML-Adapter → P16 Track-Persistenz + Karte →
+✅ P15 internes Routenmodell + GPX/KML-Adapter → ✅ P16 Track-Persistenz + Karte →
 P17 Import-/Export-UI → Tags → Reise-Diashow.
 
 ---

@@ -24,7 +24,8 @@ import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
 import { groupTombstones, nextTombstoneWatermark, type TombstoneRow } from '@/lib/sync/tombstones';
 import { nowIso } from '@/lib/util/id';
 
-const TABLES: EntityType[] = ['trips', 'stops', 'photos'];
+// Push/pull order respects the FK chain: parents before children.
+const TABLES: EntityType[] = ['trips', 'stops', 'photos', 'tracks'];
 const LAST_PULL_KEY = (t: EntityType) => `sync:lastPull:${t}`;
 const LAST_TOMBSTONE_PULL_KEY = 'sync:lastTombstonePull';
 

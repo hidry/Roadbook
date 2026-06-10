@@ -48,11 +48,23 @@ export const CREATE_STATEMENTS: string[] = [
     lat           REAL,
     lng           REAL
   );`,
+  // The real driven path (GPX/KML import). `points` = JSON text of
+  // {lat,lng,time,ele} — identical column on Postgres (migration 0010), so the
+  // sync engine moves it without conversion. New tables need NO version bump:
+  // CREATE IF NOT EXISTS runs on every launch.
+  `CREATE TABLE IF NOT EXISTS tracks (
+    ${SYNC_COLS},
+    trip_id TEXT NOT NULL,
+    name    TEXT,
+    points  TEXT NOT NULL DEFAULT '[]'
+  );`,
   `CREATE INDEX IF NOT EXISTS idx_stops_trip ON stops(trip_id, position);`,
   `CREATE INDEX IF NOT EXISTS idx_photos_stop ON photos(stop_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_tracks_trip ON tracks(trip_id);`,
   `CREATE INDEX IF NOT EXISTS idx_trips_pending ON trips(pending_sync);`,
   `CREATE INDEX IF NOT EXISTS idx_stops_pending ON stops(pending_sync);`,
   `CREATE INDEX IF NOT EXISTS idx_photos_pending ON photos(pending_sync);`,
+  `CREATE INDEX IF NOT EXISTS idx_tracks_pending ON tracks(pending_sync);`,
 ];
 
 /**

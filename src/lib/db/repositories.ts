@@ -4,10 +4,10 @@
  * to Supabase later. "Delete" is always a soft-delete (tombstone), never a hard
  * DELETE (README §5.4) — a real DSGVO hard-delete is a separate, explicit flow.
  */
-import type { Photo, Stop, StopRole, StopType, Trip, UploadStatus } from '@/types/models';
+import type { Photo, Stop, StopRole, StopType, Track, TrackGeoPoint, Trip, UploadStatus } from '@/types/models';
 import { newId, nowIso } from '@/lib/util/id';
 import { insertRow, selectRowById, selectRows, updateRow } from './crud';
-import { photoToRow, rowToPhoto, rowToStop, rowToTrip, stopToRow, tripToRow } from './mappers';
+import { photoToRow, rowToPhoto, rowToStop, rowToTrack, rowToTrip, stopToRow, trackToRow, tripToRow } from './mappers';
 
 function newBase() {
   const ts = nowIso();
@@ -147,5 +147,25 @@ export const photoRepo = {
   },
   async remove(id: string): Promise<void> {
     await softDelete('photos', id);
+  },
+};
+
+// ── Tracks ────────────────────────────────────────────────────────────────────
+export const trackRepo = {
+  async listByTrip(tripId: string): Promise<Track[]> {
+    return (await selectRows('tracks', 'trip_id = ?', [tripId], 'created_at ASC')).map(rowToTrack);
+  },
+  async create(input: { tripId: string; name?: string | null; points: TrackGeoPoint[] }): Promise<Track> {
+    const model: Track = {
+      ...newBase(),
+      tripId: input.tripId,
+      name: input.name ?? null,
+      points: input.points,
+    };
+    await insertRow('tracks', trackToRow(model));
+    return model;
+  },
+  async remove(id: string): Promise<void> {
+    await softDelete('tracks', id);
   },
 };

@@ -113,6 +113,31 @@ async function main() {
   const selA = await a.client.from('trips').select('*').eq('id', tripId);
   check('A can SELECT its own trip', !selA.error && (selA.data?.length ?? 0) === 1, `rows=${selA.data?.length}`);
 
+  // ── Tracks (migration 0010): same access chain as stops ────────────────────
+  const trackId = randomUUID();
+  const insTr = await a.client.from('tracks').insert({
+    id: trackId,
+    created_at: nowIso(),
+    updated_at: nowIso(),
+    trip_id: tripId,
+    name: 'A-Track',
+    points: '[{"lat":60.0,"lng":5.0,"time":null,"ele":null}]',
+  });
+  check('A can insert a track under its trip', !insTr.error, insTr.error?.message);
+
+  const selBtr = await b.client.from('tracks').select('*').eq('id', trackId);
+  check('B cannot SELECT A track', !selBtr.error && (selBtr.data?.length ?? 0) === 0, `rows=${selBtr.data?.length}`);
+
+  const trForge = await b.client.from('tracks').insert({
+    id: randomUUID(),
+    created_at: nowIso(),
+    updated_at: nowIso(),
+    trip_id: tripId,
+    name: 'B-into-A',
+    points: '[]',
+  });
+  check('B cannot INSERT a track into A trip', !!trForge.error, 'expected RLS violation');
+
   // ── Tombstone pull channel (migration 0006) ────────────────────────────────
   type Tombstone = { tbl: string; id: string; deleted_at: string; updated_at: string };
   const EPOCH = '1970-01-01T00:00:00.000Z';

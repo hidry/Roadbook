@@ -57,5 +57,25 @@ export interface Photo extends SyncBase {
   lng: number | null;
 }
 
+/** One vertex of a track (same shape as the route-model TrackPoint). */
+export interface TrackGeoPoint {
+  lat: number;
+  lng: number;
+  time: string | null; // ISO 8601 when the source carries one
+  ele: number | null; // metres
+}
+
+/**
+ * The real driven path of a trip (imported via GPX/KML, README §8.1). With
+ * tracks the map draws the actual route instead of straight lines between
+ * stops. Points live as a JSON text column (`points`) in both DBs; mappers.ts
+ * parses/serialises.
+ */
+export interface Track extends SyncBase {
+  tripId: string;
+  name: string | null;
+  points: TrackGeoPoint[];
+}
+
 /** The synced entity kinds, used by the generic sync engine. */
-export type EntityType = 'trips' | 'stops' | 'photos';
+export type EntityType = 'trips' | 'stops' | 'photos' | 'tracks';

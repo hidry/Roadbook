@@ -14,10 +14,12 @@ describe('groupTombstones', () => {
       row('stops', 's1', '2026-06-01T10:01:00.000Z'),
       row('stops', 's2', '2026-06-01T10:02:00.000Z'),
       row('photos', 'p1', '2026-06-01T10:03:00.000Z'),
+      row('tracks', 'tr1', '2026-06-01T10:04:00.000Z'),
     ]);
     expect(groups.get('trips')).toHaveLength(1);
     expect(groups.get('stops')?.map((r) => r.id)).toEqual(['s1', 's2']);
     expect(groups.get('photos')).toHaveLength(1);
+    expect(groups.get('tracks')).toHaveLength(1);
   });
 
   it('drops unknown table names (tbl is interpolated into SQL)', () => {

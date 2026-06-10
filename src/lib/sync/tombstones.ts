@@ -17,7 +17,7 @@ export interface TombstoneRow {
   updated_at: string;
 }
 
-const KNOWN_TABLES: ReadonlySet<string> = new Set<EntityType>(['trips', 'stops', 'photos']);
+const KNOWN_TABLES: ReadonlySet<string> = new Set<EntityType>(['trips', 'stops', 'photos', 'tracks']);
 
 /**
  * Groups RPC rows by table, dropping anything malformed or for an unknown

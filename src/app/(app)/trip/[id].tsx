@@ -8,10 +8,10 @@ import { RouteMap } from '@/components/MapView';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { stopRepo, tripRepo } from '@/lib/db/repositories';
+import { stopRepo, trackRepo, tripRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
 import { normalizeHttpUrl } from '@/lib/util/url';
-import type { Stop, StopType, Trip } from '@/types/models';
+import type { Stop, StopType, Track, Trip } from '@/types/models';
 
 const TYPE_LABEL: Record<StopType, string> = {
   campingplatz: 'Campingplatz',
@@ -31,6 +31,7 @@ export default function TripScreen() {
 
   const [trip, setTrip] = useState<Trip | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [name, setName] = useState('');
   const [tripName, setTripName] = useState('');
   const [stravaInput, setStravaInput] = useState('');
@@ -44,6 +45,7 @@ export default function TripScreen() {
       setStravaInput(t.stravaUrl ?? '');
     }
     setStops(await stopRepo.listByTrip(id));
+    setTracks(await trackRepo.listByTrip(id));
   }, [id]);
 
   useFocusEffect(
@@ -144,7 +146,7 @@ export default function TripScreen() {
   const ListHeader = (
     <>
       <Stack.Screen options={{ title: trip?.name ?? 'Reise' }} />
-      <RouteMap stops={located} />
+      <RouteMap stops={located} tracks={tracks} />
       <Card style={styles.headerCard}>
         <TextField
           label="Reisetitel"
