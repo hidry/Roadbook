@@ -10,7 +10,7 @@
  *   change later (that would be an expensive data migration).
  */
 
-export type StopType = 'campingplatz' | 'stellplatz' | 'freistehend';
+export type StopType = 'campingplatz' | 'stellplatz' | 'freistehend' | 'verentsorgung';
 export type StopRole = 'start' | 'stop' | 'end';
 export type UploadStatus = 'pending' | 'uploaded' | 'failed';
 

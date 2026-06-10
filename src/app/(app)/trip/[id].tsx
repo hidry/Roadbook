@@ -16,6 +16,7 @@ const TYPE_LABEL: Record<StopType, string> = {
   campingplatz: 'Campingplatz',
   stellplatz: 'Stellplatz',
   freistehend: 'Freistehend',
+  verentsorgung: 'Ver-/Entsorgung',
 };
 
 function syncAfterWrite() {

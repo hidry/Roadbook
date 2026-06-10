@@ -16,6 +16,7 @@ const TYPES: { value: StopType; label: string }[] = [
   { value: 'campingplatz', label: 'Campingplatz' },
   { value: 'stellplatz', label: 'Stellplatz' },
   { value: 'freistehend', label: 'Freistehend' },
+  { value: 'verentsorgung', label: 'Ver-/Entsorgung' },
 ];
 const ROLES: { value: StopRole; label: string }[] = [
   { value: 'start', label: 'Start' },

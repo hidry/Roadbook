@@ -37,6 +37,22 @@ describe('stop mapping', () => {
     expect(back).toEqual(s);
     expect(typeof back.lat).toBe('number');
   });
+
+  it('round-trips the verentsorgung stop type (migration 0008)', () => {
+    const s: Stop = {
+      ...base,
+      tripId: 't-1',
+      position: 3,
+      role: 'stop',
+      type: 'verentsorgung',
+      name: 'V+E Station',
+      lat: 60.1,
+      lng: 5.1,
+      arrivalDate: null,
+      notes: null,
+    };
+    expect(rowToStop(stopToRow(s)).type).toBe('verentsorgung');
+  });
 });
 
 describe('photo mapping', () => {

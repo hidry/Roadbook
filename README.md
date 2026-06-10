@@ -109,7 +109,7 @@ Ein **zentrales Backend für alle User** der App. Trennung der Verantwortlichkei
 > **Konvention:** DB-Spalten in `snake_case` (z. B. `owner_id`, `updated_at`), TS-Felder in `camelCase`. Mapping im DB-Client. Alle Tabellen erben die Offline-/Sync-Felder aus `SyncBase` (s. §5.4).
 
 ```typescript
-type StopType = 'campingplatz' | 'stellplatz' | 'freistehend';
+type StopType = 'campingplatz' | 'stellplatz' | 'freistehend' | 'verentsorgung';
 type StopRole = 'start' | 'stop' | 'end';
 
 // Gemeinsame Basis ALLER Tabellen — Definition + Begründung in §5.4

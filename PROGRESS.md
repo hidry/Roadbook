@@ -195,6 +195,17 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       manuell via Actions → „R2 garbage collector" und Summary prüfen
       (`candidates/purged/failures`).
 
+### P12 — Tier-1-Feature: Ver-/Entsorgung als Stopp-Typ ✅
+> README §8.1 Tier 1: Ver-/Entsorgungsstation (Frischwasser, Grau-/Schwarzwasser)
+> als eigener `StopType` — fehlt in generischen Karten-Apps.
+
+- [x] `StopType` um `'verentsorgung'` erweitert (`models.ts`, README §5)
+- [x] Migration `0008_stop_type_verentsorgung.sql`: CHECK-Constraint auf
+      `stops.type` erweitert (SQLite hat keinen CHECK → kein Schema-Bump nötig)
+- [x] UI: Typ-Auswahl im Stopp-Editor, Label in der Stopp-Liste, Typ-Zyklus im
+      Foto-Import — überall Label „Ver-/Entsorgung"
+- [x] Mapper-Roundtrip-Test für den neuen Typ
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -237,9 +248,9 @@ Migration `0005`, lokaler SQLite-Schema-Reset (PRAGMA user_version = 2).
 Migration `0006`) + P11 R2-Lösch-Lebenszyklus (GC: Edge Function `r2-gc` +
 Migration `0007` + Cron `r2-gc.yml`).
 **Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
-(s. P11), danach Feature-Backlog (README §8.1): Tier-1-Quick-Wins
-(Ver-/Entsorgungs-Stopp-Typ, Strava-Link, Wetter), dann internes Routenmodell +
-GPX/KML-Import (Architektur-Anker), Tags, Reise-Diashow.
+(s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
+Ver-/Entsorgungs-Stopp-Typ → Strava-Link → Wetter pro Stopp → internes
+Routenmodell + GPX/KML-Import (Architektur-Anker) → Tags → Reise-Diashow.
 
 ---
 
