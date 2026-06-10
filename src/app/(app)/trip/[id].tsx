@@ -276,6 +276,12 @@ export default function TripScreen() {
         />
       </Card>
       <Card style={styles.headerCard}>
+        <Button
+          title="▶️ Reise abspielen"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/play', params: { tripId: id } })}
+          disabled={located.length === 0}
+        />
         <ThemedText type="smallBold">Import & Export</ThemedText>
         <Button title="🗺 GPX/KML importieren" variant="secondary" onPress={importRouteFile} />
         <Button

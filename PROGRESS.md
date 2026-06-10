@@ -312,6 +312,26 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] UI: Tags-Feld im Trip-Screen (Blur-Save); Reise-Liste mit
       Tag-Chips zum Filtern (Toggle) + Tags auf der Reise-Karte
 
+### P19 — Reise-Diashow / Wiedergabemodus ✅ (Code) / ⏳ (Gerätelauf)
+> README §8.1 Tier 2 (Play-Button): Intro-Karte (Zeitraum, Tage, Stopps, km,
+> Fotos), dann Etappe für Etappe mit Kamera-Flug, progressiv wachsender
+> Routenlinie und Foto-Slides. Spielt **Tracks falls vorhanden, sonst
+> Luftlinie** (entkoppelt von der Quelle, P16). Die Sequenz-Engine wird später
+> vom Reise-Story-Export wiederverwendet.
+
+- [x] `src/lib/slideshow/` (PURE, RN-frei): Haversine/`pathDistanceKm`,
+      `nearestIndex` + `legsForStops` (Stopps auf nächste Trackpunkte gesnappt,
+      Indizes non-decreasing, degenerierte Legs → Luftlinie),
+      `slideDurationMs` (∝ Fotoanzahl, gedeckelt), `buildSlideshow`
+      (Intro-Statistik: Zeitraum/Tage aus arrivalDates, km entlang Track sonst
+      Luftlinie; nur lokalisierte Stopps) — **10 Unit-Tests**
+- [x] `SlideshowPlayer` (+ Web-Stub): Vollbild-Karte, Kamera-`fly` pro Etappe,
+      wachsende Linie (Legs bis zur aktuellen Folie), Foto-Zyklus pro Stopp
+      (`expo-image`), Tap-Zonen zurück/Pause/vor, Fortschritt + Schließen
+- [x] Screen `/play?tripId=…` (Header aus) + „▶️ Reise abspielen"-Button im
+      Trip-Screen (deaktiviert ohne lokalisierte Stopps)
+- [⏳] Gerätelauf (Kamera-Animation/Performance) steht aus
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -357,7 +377,10 @@ Migration `0007` + Cron `r2-gc.yml`).
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
 Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
 ✅ P15 internes Routenmodell + GPX/KML-Adapter → ✅ P16 Track-Persistenz + Karte →
-✅ P17 Import-/Export-UI → ✅ P18 Tags → Reise-Diashow.
+✅ P17 Import-/Export-UI → ✅ P18 Tags → ✅ P19 Reise-Diashow.
+**Damit ist die geplante Feature-Reihe komplett.** Offen (Gerät): Dev-Client-
+Build wegen neuer nativer Module (expo-document-picker/-sharing), Gerätelauf von
+Import/Export und Diashow; Cloud: Migrations 0006–0011 via `supabase db push`.
 
 ---
 
@@ -369,16 +392,10 @@ bereits vorbereitet.
 ## Zukunfts-Features (nach P8/P9)
 - ✅ **Tag-System für Reisen** — umgesetzt in P18 (Migration `0011`, Tag-Chips
   in der Reise-Liste; Fahrzeug als Tag statt Hierarchie-Ebene, Vorbild Furkot).
-- **Reise-Diashow / Wiedergabemodus** (Play-Button, README §8.1 Tier 2): Reise in
-  der App abspielen — Intro-Karte (Zeitraum, Tage, Stopps, km, Länder), dann Etappe
-  für Etappe mit Karten-Kamerafahrt (`flyTo`/`fitBounds`), progressiv wachsender
-  Routenlinie und Foto-Slides. Sequenz-Logik RN-frei in `src/lib/` (Jest-testbar);
-  Player-UI + Animation obendrauf. **Setzt auf Track-Geometrie auf:** Karte zeichnet
-  heute nur **Luftlinien** zwischen Stopps (`MapView.tsx`, `lineCoords`) → mit
-  **Tracks** aus GPX-/Google-Timeline-Import (internes Routenmodell, §8.1-Anker)
-  folgt die Linie der echten Strecke; Fallback bleibt Luftlinie. **Teilt die
-  Sequenz-Engine mit dem Reise-Story-Export** (In-App zuerst, MP4/Web-Link-Export
-  als Aufsatz).
+- ✅ **Reise-Diashow / Wiedergabemodus** — umgesetzt in P19 (Sequenz-Engine
+  RN-frei in `src/lib/slideshow/`, Player mit Kamera-Flug + wachsender Linie +
+  Foto-Slides; Tracks falls vorhanden, sonst Luftlinie). Der **Reise-Story-
+  Export** (MP4/Web-Link) bleibt offen und nutzt dieselbe Sequenz-Engine.
 
 ## Bekannte Limits der MVP-Sync-Engine
 - ✅ **GELÖST (P10, Migration `0006`): Löschungen propagieren jetzt auch per Pull.**
