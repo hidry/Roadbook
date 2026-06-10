@@ -115,10 +115,10 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
     auf `Trip`/2-stufig aktualisieren; „Roadbook = App-Name“ festhalten.
 
-### P9 — Cross-Device-Fotos & reale Inbetriebnahme ✅ (Code) / 🔄 (Zwei-Geräte-Test offen)
+### P9 — Cross-Device-Fotos & reale Inbetriebnahme ✅
 > R2-Upload auf echtem Gerät verifiziert (49/49 hochgeladen, Bucket gefüllt,
-> `storage_url` zurücksynchronisiert). Cross-Device-Anzeige im Code gelöst;
-> finaler Zwei-Geräte-Test steht noch aus.
+> `storage_url` zurücksynchronisiert). Zwei-Geräte-Test bestanden und
+> Map-Tiles eingerichtet (2026-06) — P9 damit vollständig abgeschlossen.
 
 **9a — Fotos cross-device verfügbar machen** ✅
 - [x] Upload in den Sync verlegt (Supabase-Metadaten zuerst, dann R2) — **ein**
@@ -131,8 +131,8 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Anzeige nutzt `localUri ?? storageUrl`; `expo-image` cached die R2-URL
       (Memory+Disk) → kein erneuter Download je Render, offline nach 1. Laden
 - [x] Verifikation Upload auf echtem Gerät (49/49 OK)
-- [ ] Zwei-Geräte-Test: Foto auf Gerät B sichtbar (braucht öffentl. R2-Lesezugriff
-      via `R2_PUBLIC_BASE_URL` + neuen Build mit 9a)
+- [x] Zwei-Geräte-Test: Foto auf Gerät B sichtbar ✓ (öffentl. R2-Lesezugriff via
+      `R2_PUBLIC_BASE_URL` + Build mit 9a; Anzeige fällt auf `storage_url` zurück)
 
 **9b — Reale Inbetriebnahme** ✅
 - [x] Supabase-Cloud: Migrations bis 0005 eingespielt
@@ -141,7 +141,8 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Edge Function `r2-presign` deployt (+ CI-Workflow `supabase-functions.yml`)
 - [x] Installierbares APK via Runner-Build (`eas build --local`, Profil preview)
 - [x] Gerätelauf: Picker/EXIF, Auth, Sync, Foto-Upload end-to-end ✓
-- [ ] offen: MapLibre-Tiles (PMTiles), Zwei-Geräte-Test
+- [x] MapLibre-Tiles eingerichtet (Style-URL via env, PMTiles) ✓
+- [x] Zwei-Geräte-Test bestanden ✓ (s. 9a)
 
 ---
 
@@ -170,18 +171,19 @@ Modell: `User → viele Trips → Stops → Photos` (2-stufig, ohne `routes`).
 ---
 
 ## Stand
-MVP-Code (P0–P7) + Datenmodell-Vereinfachung (P8) umgesetzt. Headless verifiziert:
-`npm run typecheck`, `npm test` (71 Tests), `npm run lint` — alle grün.
-RLS-Isolationsbeweis läuft in CI (lokal Docker durch Netzwerk-Policy blockiert).
+**MVP abgeschlossen (P0–P9, Stand 2026-06).** Alle MVP-Reste erledigt:
+Zwei-Geräte-Test bestanden (Foto auf Gerät B via `storage_url`/R2 sichtbar),
+MapLibre-Tiles eingerichtet, Migrations bis 0005 im Cloud-Projekt eingespielt,
+Edge Function `r2-presign` deployt, App läuft auf echten Geräten end-to-end
+(Auth, CRUD, Foto-Import → Routenvorschlag, R2-Upload, Karte).
+Headless verifiziert: `npm run typecheck`, `npm test`, `npm run lint` — alle grün;
+RLS-Isolationsbeweis läuft in CI.
 Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallback,
 Tombstone-RLS-Fix, globales Crash-Logging.
 P8: Modell auf 2-stufig (`Trip → Stop → Photo`), `roadbooks`/`routes` → `trips`,
 Migration `0005`, lokaler SQLite-Schema-Reset (PRAGMA user_version = 2).
-**Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
-R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
-**Migrations 0003 + 0004** sind im Cloud-Projekt bereits eingespielt. Migration
-**0005** (P8) muss noch via `supabase db push` (oder SQL-Editor) eingespielt werden
-— danach ist 0004 obsolet (Route-Policies entfallen).
+**Nächste Schritte (Post-MVP):** P10 Tombstone-Sync (Lösch-Propagation), P11
+R2-Lösch-Lebenszyklus (GC), danach Feature-Backlog (README §8.1).
 
 ---
 
