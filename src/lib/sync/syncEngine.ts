@@ -13,11 +13,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { EntityType } from '@/types/models';
 import { getDb } from '@/lib/db/sqlite';
 import type { Row } from '@/lib/db/mappers';
+import { photoRepo } from '@/lib/db/repositories';
 import { supabase } from '@/lib/supabase';
 import { flushLog, logLine } from '@/lib/debug-log';
+import { compressPhoto } from '@/lib/photos/compress';
+import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
 import { nowIso } from '@/lib/util/id';
 
-const TABLES: EntityType[] = ['roadbooks', 'routes', 'stops', 'photos'];
+const TABLES: EntityType[] = ['trips', 'stops', 'photos'];
 const LAST_PULL_KEY = (t: EntityType) => `sync:lastPull:${t}`;
 
 /** Decode the JWT payload without verification (for logging only). */
@@ -32,9 +35,12 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 }
 
 /** Local-only columns that must never be sent to the backend. */
+/** Local-only columns that must never be sent to the backend. `local_uri` is a
+ *  path on THIS device — meaningless (and misleading) on another, so a second
+ *  device falls back to `storage_url` for display. */
 function toRemote(table: EntityType, row: Row): Record<string, unknown> {
-  const { pending_sync: _pending, ...rest } = row;
-  if (table === 'roadbooks' && typeof rest.shared_with === 'string') {
+  const { pending_sync: _pending, local_uri: _localUri, ...rest } = row;
+  if (table === 'trips' && typeof rest.shared_with === 'string') {
     // Local stores shared_with as JSON text; Postgres column is an array.
     try {
       return { ...rest, shared_with: JSON.parse(rest.shared_with) as string[] };
@@ -49,6 +55,10 @@ function toRemote(table: EntityType, row: Row): Record<string, unknown> {
 function toLocal(table: EntityType, row: Record<string, unknown>): Row {
   const out: Row = {};
   for (const [k, v] of Object.entries(row)) {
+    // Never let a remote `local_uri` overwrite this device's own value: it is a
+    // path on the *uploading* device. Pulled rows keep local_uri = NULL so the
+    // UI falls back to storage_url (the R2 URL); expo-image caches that.
+    if (k === 'local_uri') continue;
     if (k === 'shared_with') {
       out[k] = JSON.stringify(Array.isArray(v) ? v : []);
     } else if (v === null || typeof v === 'string' || typeof v === 'number') {
@@ -121,18 +131,18 @@ export async function pushPending(): Promise<void> {
     if (rows.length === 0) continue;
     const payload = rows.map((r) => toRemote(table, r));
 
-    // Log owner_id vs auth_uid for every pending roadbook so mismatches are
+    // Log owner_id vs auth_uid for every pending trip so mismatches are
     // immediately visible in the menu log without truncation.
-    if (table === 'roadbooks') {
+    if (table === 'trips') {
       for (const p of payload) {
         const oid = String((p as Record<string, unknown>).owner_id ?? '');
         const match = oid === uid ? 'OK' : 'MISMATCH';
-        logLine('SYNC:PUSH', `roadbook owner_id=${oid} auth_uid=${uid} [${match}]`);
+        logLine('SYNC:PUSH', `trip owner_id=${oid} auth_uid=${uid} [${match}]`);
       }
       // Drop rows that would fail the INSERT RLS `owner_id = auth.uid()` check.
       const filtered = payload.filter((p) => (p as Record<string, unknown>).owner_id === uid);
       if (filtered.length < payload.length) {
-        logLine('SYNC:PUSH', `${payload.length - filtered.length} Roadbook(s) übersprungen (owner_id ≠ auth_uid) — repairOwnership() aufrufen`);
+        logLine('SYNC:PUSH', `${payload.length - filtered.length} Trip(s) übersprungen (owner_id ≠ auth_uid) — repairOwnership() aufrufen`);
       }
       payload.splice(0, payload.length, ...filtered);
       if (payload.length === 0) continue;
@@ -214,6 +224,10 @@ export async function pullChanges(): Promise<void> {
       if (u > maxUpdated) maxUpdated = u;
     }
     await AsyncStorage.setItem(LAST_PULL_KEY(table), maxUpdated);
+    // Log successful pulls too (not just errors): a fresh device pulling from the
+    // 1970 watermark shows e.g. "trips: 2" here, which immediately reveals a
+    // duplicate row in the cloud — otherwise the pull is silent and undiagnosable.
+    logLine('SYNC:PULL', `${table}: ${data.length} Zeile(n) gezogen (since ${since})`);
   }
 }
 
@@ -229,36 +243,89 @@ export async function getPendingSyncCount(): Promise<number> {
 }
 
 /**
- * Re-assigns all local roadbooks whose owner_id doesn't match userId to userId
- * and marks them pending_sync = 1. Call this when the RLS push log shows
+ * Re-assigns all local trips whose owner_id doesn't match userId to userId and
+ * marks them pending_sync = 1. Call this when the RLS push log shows
  * "owner_id ≠ auth_uid" — it repairs data created under a different test
  * account or after a Supabase project reset.
  *
- * Returns the number of roadbooks that were fixed.
+ * Returns the number of trips that were fixed.
  */
 export async function repairOwnership(userId: string): Promise<number> {
   const db = getDb();
   const ts = nowIso();
   await db.runAsync(
-    `UPDATE roadbooks SET owner_id = ?, updated_at = ?, pending_sync = 1 WHERE owner_id != ?`,
+    `UPDATE trips SET owner_id = ?, updated_at = ?, pending_sync = 1 WHERE owner_id != ?`,
     [userId, ts, userId],
   );
   const result = await db.getFirstAsync<{ n: number }>('SELECT changes() AS n');
   const fixed = result?.n ?? 0;
-  logLine('SYNC:REPAIR', `owner_id korrigiert für ${fixed} Roadbook(s) → ${userId}`);
+  logLine('SYNC:REPAIR', `owner_id korrigiert für ${fixed} Trip(s) → ${userId}`);
   void flushLog();
   return fixed;
 }
 
+/**
+ * Uploads photo binaries to R2 for every row not yet uploaded that still has a
+ * local file. Runs AFTER the Supabase metadata sync (metadata first, binaries
+ * second). Best-effort per photo; failures are marked 'failed' and retried on
+ * the next sync. `setUploaded`/`setUploadStatus` re-mark the row pending_sync=1
+ * so the new storage_url (or status) is pushed up afterwards.
+ *
+ * Returns the number of photos successfully uploaded this pass.
+ */
+export async function pushPhotoUploads(): Promise<number> {
+  const db = getDb();
+  const rows = (await db.getAllAsync(
+    `SELECT id, local_uri FROM photos
+     WHERE upload_status != 'uploaded' AND local_uri IS NOT NULL AND local_uri != '' AND deleted_at IS NULL;`,
+  )) as { id: string; local_uri: string }[];
+  if (rows.length === 0) return 0;
+
+  logLine('R2:UPLOAD', `${rows.length} Foto(s) noch zu laden`);
+  let ok = 0;
+  for (const r of rows) {
+    const short = r.id.slice(0, 8);
+    try {
+      const compressed = await compressPhoto(r.local_uri);
+      const url = await uploadPhotoToR2(compressed.uri, r.id);
+      await photoRepo.setUploaded(r.id, url);
+      ok++;
+      logLine('R2:UPLOAD', `OK ${short}…`);
+    } catch (e) {
+      await photoRepo.setUploadStatus(r.id, 'failed');
+      logLine('R2:UPLOAD', `FEHLER ${short}…: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  logLine('R2:UPLOAD', `${ok}/${rows.length} hochgeladen`);
+  return ok;
+}
+
+/** Guards against overlapping sync cycles. The background hook, manual "Sync
+ *  jetzt" and post-write triggers can all fire syncNow at once; running the
+ *  heavy photo-upload loop twice in parallel made expo-image-manipulator jobs
+ *  cancel each other ("renderAsync … cancelled"). */
+let syncInFlight = false;
+
 /** One full sync cycle. Best-effort: callers swallow errors when offline. */
 export async function syncNow(): Promise<void> {
+  if (syncInFlight) {
+    logLine('SYNC', 'Zyklus läuft bereits — übersprungen');
+    return;
+  }
+  syncInFlight = true;
   try {
+    // 1) Supabase first: push local metadata changes up, then pull remote down.
     await pushPending();
     await pullChanges();
+    // 2) R2 second: upload any photo binaries still pending/failed.
+    const uploaded = await pushPhotoUploads();
+    // 3) Push the resulting storage_url / status changes back up to Supabase.
+    if (uploaded > 0) await pushPending();
   } catch (e) {
     logLine('SYNC', `Zyklus abgebrochen: ${e instanceof Error ? e.message : String(e)}`);
     throw e;
   } finally {
+    syncInFlight = false;
     void flushLog();
   }
 }

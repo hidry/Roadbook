@@ -1,23 +1,22 @@
 /**
  * Photo-import flow (README §4): pick photos → read EXIF GPS/time → cluster into
- * stops → reverse-geocode names → user edits → save route + stops + photos.
- * Photos are then compressed and uploaded to R2 in the background; a failed
- * upload is marked, never fatal (offline-first, README §5.4 upload queue).
+ * stops → reverse-geocode names → user edits → save stops + photos onto the trip.
+ * Photo rows are created with upload_status 'pending'; the sync engine then
+ * compresses + uploads them to R2 (Supabase metadata first, R2 binaries second)
+ * and retries failures on every later sync (offline-first, README §5.4).
  */
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { photoRepo, routeRepo, stopRepo } from '@/lib/db/repositories';
+import { photoRepo, stopRepo, tripRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
 import { clearLog, readLog } from '@/lib/debug-log';
 import { reverseGeocode, describeGeocodeStatus, type GeocodeStatus } from '@/lib/geocoding';
-import { compressPhoto } from '@/lib/photos/compress';
 import { pickAndReadPhotos, type PickedPhoto } from '@/lib/photos/exif';
-import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
 import { suggestRoute, type ClusterDiagnostics, type SuggestedStop } from '@/lib/photos/suggestion';
 import type { StopType } from '@/types/models';
 
@@ -32,11 +31,19 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function ImportScreen() {
-  const { roadbookId } = useLocalSearchParams<{ roadbookId: string }>();
+  const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [title, setTitle] = useState('');
+
+  // Prefill the title with the trip's current name (the import can rename it).
+  useEffect(() => {
+    if (!tripId) return;
+    void tripRepo.get(tripId).then((t) => {
+      if (t?.name) setTitle((prev) => prev || t.name);
+    });
+  }, [tripId]);
   const [stops, setStops] = useState<SuggestedStop[]>([]);
   const [unassigned, setUnassigned] = useState<string[]>([]);
   const [clusterDiag, setClusterDiag] = useState<ClusterDiagnostics | null>(null);
@@ -118,22 +125,27 @@ export default function ImportScreen() {
   }
 
   async function save() {
-    if (!roadbookId || stops.length === 0) return;
+    if (!tripId || stops.length === 0) return;
     setPhase('saving');
     try {
-      const route = await routeRepo.create({
-        roadbookId,
-        title: title.trim() || 'Neue Reise',
-        startDate: stops[0]?.arrivalDate ?? null,
-      });
+      // Append onto the existing trip; rename it if the title changed and set the
+      // trip start date from the first stop when it has none yet.
+      const existing = await stopRepo.listByTrip(tripId);
+      const base = existing.length;
+      const trip = await tripRepo.get(tripId);
+      const newName = title.trim();
+      if (newName && newName !== trip?.name) await tripRepo.rename(tripId, newName);
+      if (trip && !trip.startDate && stops[0]?.arrivalDate) {
+        await tripRepo.update(tripId, { startDate: stops[0].arrivalDate });
+      }
 
       const last = stops.length - 1;
       for (let i = 0; i < stops.length; i++) {
         const s = stops[i];
-        const role = i === 0 ? 'start' : i === last ? 'end' : 'stop';
+        const role = base > 0 ? 'stop' : i === 0 ? 'start' : i === last ? 'end' : 'stop';
         const created = await stopRepo.create({
-          routeId: route.id,
-          position: i,
+          tripId,
+          position: base + i,
           role,
           type: role === 'stop' ? s.type ?? null : null,
           name: s.name,
@@ -145,18 +157,17 @@ export default function ImportScreen() {
         for (const pid of [...s.photoIds, ...s.attachedPhotoIds]) {
           const meta = metaById[pid];
           if (!meta) continue;
-          const photo = await photoRepo.create({
+          await photoRepo.create({
             stopId: created.id,
             localUri: meta.uri,
             takenAt: meta.takenAt,
             lat: meta.lat,
             lng: meta.lng,
           });
-          void uploadInBackground(photo.id, meta.uri);
         }
       }
       syncNow().catch((e) => console.warn('[sync] post-import:', e instanceof Error ? e.message : e));
-      router.replace({ pathname: '/route/[id]', params: { id: route.id } });
+      router.replace({ pathname: '/trip/[id]', params: { id: tripId } });
     } catch (e) {
       setPhase('review');
       Alert.alert('Speichern fehlgeschlagen', e instanceof Error ? e.message : 'Unbekannter Fehler');
@@ -193,7 +204,7 @@ export default function ImportScreen() {
 
       {phase === 'idle' ? (
         <Card>
-          <ThemedText type="smallBold">Route aus Fotos vorschlagen</ThemedText>
+          <ThemedText type="smallBold">Stopps aus Fotos vorschlagen</ThemedText>
           <ThemedText type="small">
             Wähle Fotos einer Reise. Aus GPS + Aufnahmezeit schlägt Roadbook Stopps vor – alles bleibt editierbar.
           </ThemedText>
@@ -214,7 +225,7 @@ export default function ImportScreen() {
       {phase === 'review' ? (
         <>
           <Card>
-            <TextField label="Titel der Route" value={title} onChangeText={setTitle} />
+            <TextField label="Titel der Reise" value={title} onChangeText={setTitle} />
             {clusterDiag ? (
               <ThemedText type="small" style={styles.diag}>
                 {clusterDiag.photosWithGeo} Fotos mit GPS → {clusterDiag.placesFound} Ort(e) →{' '}
@@ -256,22 +267,11 @@ export default function ImportScreen() {
             </Card>
           ) : null}
 
-          <Button title="Route speichern" onPress={save} disabled={stops.length === 0} />
+          <Button title="Reise speichern" onPress={save} disabled={stops.length === 0} />
         </>
       ) : null}
     </Screen>
   );
-}
-
-/** Compress + upload one photo; mark the row uploaded/failed. Best-effort. */
-async function uploadInBackground(photoId: string, localUri: string): Promise<void> {
-  try {
-    const compressed = await compressPhoto(localUri);
-    const url = await uploadPhotoToR2(compressed.uri, photoId);
-    await photoRepo.setUploaded(photoId, url);
-  } catch {
-    await photoRepo.setUploadStatus(photoId, 'failed');
-  }
 }
 
 const styles = StyleSheet.create({

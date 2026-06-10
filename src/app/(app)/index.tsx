@@ -6,17 +6,17 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth/AuthProvider';
-import { roadbookRepo } from '@/lib/db/repositories';
-import type { Roadbook } from '@/types/models';
+import { tripRepo } from '@/lib/db/repositories';
+import type { Trip } from '@/types/models';
 
-export default function RoadbooksScreen() {
+export default function TripsScreen() {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const [roadbooks, setRoadbooks] = useState<Roadbook[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [name, setName] = useState('');
 
   const load = useCallback(async () => {
-    setRoadbooks(await roadbookRepo.list());
+    setTrips(await tripRepo.list());
   }, []);
 
   useFocusEffect(
@@ -28,19 +28,19 @@ export default function RoadbooksScreen() {
   async function create() {
     const trimmed = name.trim();
     if (!trimmed || !user) return;
-    await roadbookRepo.create({ name: trimmed, ownerId: user.id });
+    await tripRepo.create({ name: trimmed, ownerId: user.id });
     setName('');
     await load();
   }
 
-  function confirmDelete(rb: Roadbook) {
-    Alert.alert('Roadbook löschen?', `„${rb.name}" wird entfernt.`, [
+  function confirmDelete(trip: Trip) {
+    Alert.alert('Reise löschen?', `„${trip.name}" wird entfernt.`, [
       { text: 'Abbrechen', style: 'cancel' },
       {
         text: 'Löschen',
         style: 'destructive',
         onPress: async () => {
-          await roadbookRepo.remove(rb.id);
+          await tripRepo.remove(trip.id);
           await load();
         },
       },
@@ -51,7 +51,7 @@ export default function RoadbooksScreen() {
     <Screen>
       <Stack.Screen
         options={{
-          title: 'Roadbooks',
+          title: 'Reisen',
           headerRight: () => (
             <Pressable onPress={() => router.push('/menu')} hitSlop={12} style={styles.menuBtn}>
               <ThemedText style={styles.menuBtnText}>···</ThemedText>
@@ -60,24 +60,24 @@ export default function RoadbooksScreen() {
         }}
       />
       <Card>
-        <ThemedText type="smallBold">Neues Roadbook</ThemedText>
+        <ThemedText type="smallBold">Neue Reise</ThemedText>
         <TextField placeholder="z. B. Norwegen 2026" value={name} onChangeText={setName} onSubmitEditing={create} />
         <Button title="Anlegen" onPress={create} disabled={!name.trim()} />
       </Card>
 
-      {roadbooks.length === 0 ? (
+      {trips.length === 0 ? (
         <ThemedText type="small" style={styles.empty}>
-          Noch keine Roadbooks. Lege oben dein erstes an.
+          Noch keine Reisen. Lege oben deine erste an.
         </ThemedText>
       ) : (
-        roadbooks.map((rb) => (
+        trips.map((trip) => (
           <Pressable
-            key={rb.id}
-            onPress={() => router.push({ pathname: '/roadbook/[id]', params: { id: rb.id } })}
-            onLongPress={() => confirmDelete(rb)}>
+            key={trip.id}
+            onPress={() => router.push({ pathname: '/trip/[id]', params: { id: trip.id } })}
+            onLongPress={() => confirmDelete(trip)}>
             <Card>
               <ThemedText type="subtitle" style={styles.rowTitle}>
-                {rb.name}
+                {trip.name}
               </ThemedText>
               <ThemedText type="small">Lang drücken zum Löschen</ThemedText>
             </Card>

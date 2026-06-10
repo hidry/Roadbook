@@ -55,61 +55,61 @@ async function main() {
   const a = await makeUser('a');
   const b = await makeUser('b');
 
-  // 1) A inserts its own roadbook (WITH CHECK owner_id = auth.uid()).
-  const rbId = randomUUID();
+  // 1) A inserts its own trip (WITH CHECK owner_id = auth.uid()).
+  const tripId = randomUUID();
   const insA = await a.client
-    .from('roadbooks')
-    .insert({ id: rbId, created_at: nowIso(), updated_at: nowIso(), owner_id: a.id, name: 'A-Roadbook' });
-  check('A can insert its own roadbook', !insA.error, insA.error?.message);
+    .from('trips')
+    .insert({ id: tripId, created_at: nowIso(), updated_at: nowIso(), owner_id: a.id, name: 'A-Trip' });
+  check('A can insert its own trip', !insA.error, insA.error?.message);
 
-  // 2) A inserts a route + stop + photo under its roadbook.
-  const rtId = randomUUID();
-  const insRt = await a.client
-    .from('routes')
-    .insert({ id: rtId, created_at: nowIso(), updated_at: nowIso(), roadbook_id: rbId, title: 'A-Route' });
-  check('A can insert a route under its roadbook', !insRt.error, insRt.error?.message);
-
+  // 2) A inserts a stop directly under its trip.
   const stId = randomUUID();
   const insSt = await a.client.from('stops').insert({
     id: stId,
     created_at: nowIso(),
     updated_at: nowIso(),
-    route_id: rtId,
+    trip_id: tripId,
     position: 0,
     role: 'start',
     name: 'A-Stop',
     lat: 60.0,
     lng: 5.0,
   });
-  check('A can insert a stop under its route', !insSt.error, insSt.error?.message);
+  check('A can insert a stop under its trip', !insSt.error, insSt.error?.message);
 
   // 3) B cannot SEE any of A's rows.
-  const selB = await b.client.from('roadbooks').select('*').eq('id', rbId);
-  check('B cannot SELECT A roadbook', !selB.error && (selB.data?.length ?? 0) === 0, `rows=${selB.data?.length}`);
-  const selBrt = await b.client.from('routes').select('*').eq('id', rtId);
-  check('B cannot SELECT A route', !selBrt.error && (selBrt.data?.length ?? 0) === 0, `rows=${selBrt.data?.length}`);
+  const selB = await b.client.from('trips').select('*').eq('id', tripId);
+  check('B cannot SELECT A trip', !selB.error && (selB.data?.length ?? 0) === 0, `rows=${selB.data?.length}`);
   const selBst = await b.client.from('stops').select('*').eq('id', stId);
   check('B cannot SELECT A stop', !selBst.error && (selBst.data?.length ?? 0) === 0, `rows=${selBst.data?.length}`);
 
-  // 4) A cannot insert a roadbook claiming B as owner (WITH CHECK).
+  // 4) A cannot insert a trip claiming B as owner (WITH CHECK).
   const forge = await a.client
-    .from('roadbooks')
+    .from('trips')
     .insert({ id: randomUUID(), created_at: nowIso(), updated_at: nowIso(), owner_id: b.id, name: 'forged' });
-  check('A cannot INSERT a roadbook owned by B', !!forge.error, 'expected RLS violation');
+  check('A cannot INSERT a trip owned by B', !!forge.error, 'expected RLS violation');
 
-  // 5) B cannot insert a route into A's roadbook (child WITH CHECK).
-  const childForge = await b.client
-    .from('routes')
-    .insert({ id: randomUUID(), created_at: nowIso(), updated_at: nowIso(), roadbook_id: rbId, title: 'B-into-A' });
-  check('B cannot INSERT a route into A roadbook', !!childForge.error, 'expected RLS violation');
+  // 5) B cannot insert a stop into A's trip (child WITH CHECK).
+  const childForge = await b.client.from('stops').insert({
+    id: randomUUID(),
+    created_at: nowIso(),
+    updated_at: nowIso(),
+    trip_id: tripId,
+    position: 1,
+    role: 'stop',
+    name: 'B-into-A',
+    lat: 0,
+    lng: 0,
+  });
+  check('B cannot INSERT a stop into A trip', !!childForge.error, 'expected RLS violation');
 
-  // 6) B cannot UPDATE A's roadbook (USING filters it out → 0 rows affected).
-  const updB = await b.client.from('roadbooks').update({ name: 'hijacked' }).eq('id', rbId).select();
-  check('B cannot UPDATE A roadbook', !updB.error && (updB.data?.length ?? 0) === 0, `rows=${updB.data?.length}`);
+  // 6) B cannot UPDATE A's trip (USING filters it out → 0 rows affected).
+  const updB = await b.client.from('trips').update({ name: 'hijacked' }).eq('id', tripId).select();
+  check('B cannot UPDATE A trip', !updB.error && (updB.data?.length ?? 0) === 0, `rows=${updB.data?.length}`);
 
-  // 7) A can still SELECT its own roadbook (positive control).
-  const selA = await a.client.from('roadbooks').select('*').eq('id', rbId);
-  check('A can SELECT its own roadbook', !selA.error && (selA.data?.length ?? 0) === 1, `rows=${selA.data?.length}`);
+  // 7) A can still SELECT its own trip (positive control).
+  const selA = await a.client.from('trips').select('*').eq('id', tripId);
+  check('A can SELECT its own trip', !selA.error && (selA.data?.length ?? 0) === 1, `rows=${selA.data?.length}`);
 
   // Cleanup — removing the users cascades their data (owner_id ON DELETE CASCADE).
   await admin.auth.admin.deleteUser(a.id);

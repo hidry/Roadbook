@@ -96,6 +96,14 @@ Ein **zentrales Backend für alle User** der App. Trennung der Verantwortlichkei
 
 ## 5. Datenmodell (Multi-Tenant ab Tag 1)
 
+> **⚠️ Stand der Umsetzung (PROGRESS P8):** Das Modell wurde gegenüber dem
+> ursprünglichen Entwurf unten **vereinfacht**. „Roadbook“ ist der **App-Name**,
+> kein Daten-Objekt; Top-Level-Entität ist der **`Trip`** (UI: „Reise“). Stops
+> hängen **direkt** am Trip — die `Route`-/`routes`-Zwischenebene wurde entfernt
+> (Migration `0005`). Hierarchie: `User → Trip → Stop → Photo`. Die `Route`-
+> Interfaces/RLS-Beispiele in diesem Abschnitt beschreiben den alten 3-stufigen
+> Entwurf; **maßgeblich ist der Code** (`src/types/models.ts`, `supabase/migrations/`).
+
 ### 5.1 Tabellen (vereinfacht)
 
 > **Konvention:** DB-Spalten in `snake_case` (z. B. `owner_id`, `updated_at`), TS-Felder in `camelCase`. Mapping im DB-Client. Alle Tabellen erben die Offline-/Sync-Felder aus `SyncBase` (s. §5.4).
@@ -397,7 +405,8 @@ Google-Timeline ─┘   (JSON/EU-CSV; nur extrahierte Stopps, kein Roh-Dump)
 | **GPX/KML/KMZ Import & Export** | mittel | hoch | Deckt **Google MyMaps** (über dessen KML-Export/Import), Komoot, Garmin, OsmAnd u. v. m. in einem ab. Kein Vendor-Lock. **Ersetzt die ursprüngliche „MyMaps-Integration" sauber.** Über Adapter (s. o.). |
 | **Google-Timeline-Import** | mittel | hoch | Reichere Datenquelle als EXIF (semantisch erkannte Visits + Bewegungssegmente), stärkt den Kern-USP. ⚠️ **Nur manueller Datei-Import** — seit 2024/2025 on-device, keine API/kein Takeout-Cloud-Export mehr. User exportiert `Timeline.json` aus Google Maps, App liest via File-Picker. EU-Variante teils **CSV** → zweiter Parser. Undokumentiertes Format (Community-Schema/GPSBabel) → Wartungsrisiko. ⛔ **DSGVO:** nur extrahierte Stopps/Route speichern, **niemals** den rohen Timeline-Dump (vollständiges Bewegungsprofil). Über Adapter (s. o.). |
 | **Reisekosten-Tracking** (Sprit, Stellplatz, Maut/Vignette pro Land) | mittel | mittel | Ergänzt das Roadbook natürlich; Budget pro Reise |
-| **Reise-Story-Export** (PDF / read-only Web-Link) | mittel–hoch | mittel–hoch | Reise mit Fotos + Karte teilen, ohne dass der Empfänger die App braucht |
+| **Reise-Diashow / Wiedergabemodus** (Play-Button) | mittel | mittel–hoch | Reise *in der App* abspielen: Intro-Karte (Zeitraum von–bis, Anzahl Tage/Stopps, Gesamt-km, Länder), dann Etappe für Etappe — Karten-Kamera fliegt (`flyTo`/`fitBounds`) entlang der Route, Linie wächst progressiv, Fotos des Stopps als Slides (optional Ken-Burns-Zoom). Auto-Advance mit Pause/Vor/Zurück; Slide-Dauer ∝ Foto-Anzahl/Aufenthaltsdauer. **Sequenz-Berechnung RN-frei in `src/lib/` (Jest-testbar, analog `clustering.ts`/`suggestion.ts`); Player-UI + Kamera-Animation obendrauf.** Offline-tauglich (nur lokale SQLite + geladene Fotos). ⚠️ **Koppelt mit Track-Geometrie:** Karte zeichnet aktuell nur **Luftlinien** zwischen Stopps (`MapView.tsx`, `lineCoords` aus Stopp-Punkten) — die Kamera-Fahrt folgt also Luftlinien, nicht der Straße. Mit **Tracks** (aus GPX-/Timeline-Import, s. internes Routenmodell §8.1-Anker) liegt die Linie auf der echten Strecke → glaubwürdige Fahrt. Diashow spielt **Tracks, falls vorhanden, sonst Luftlinie als Fallback** (entkoppelt von der Quelle). **Teilt die Sequenz-Engine mit dem Reise-Story-Export** (dieselbe Slide-Folge später als MP4/Web-Link rendern). |
+| **Reise-Story-Export** (PDF / read-only Web-Link) | mittel–hoch | mittel–hoch | Reise mit Fotos + Karte teilen, ohne dass der Empfänger die App braucht. **Synergie:** teilt die Slide-Sequenz-Engine mit der Reise-Diashow (s. o.) — In-App-Diashow zuerst, Export als Aufsatz. |
 | **Proaktive Reiseerkennung aus der Galerie** | mittel | hoch | „Polarsteps rückwärts": App scannt Galerie und schlägt von selbst Roadbooks für noch nicht erfasste Zeiträume vor. Signal = **GPS-Distanz von zu Hause + zeitliche Häufung + Mehrtägigkeit** (keine Bilderkennung nötig). Baut auf EXIF-Clustering (§4) auf. ⚠️ Inkrementell scannen (Akku); iOS „Limited Photo Access" kann Auto-Scan untergraben; DSGVO: on-device, nur Metadaten; Schwelle gegen Falsch-Positive (Wochenendausflug ≠ Reise). |
 
 #### Tier 3 — Strategisch / hoher Aufwand

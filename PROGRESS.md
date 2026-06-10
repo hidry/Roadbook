@@ -76,17 +76,112 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Menu-Screen (`src/app/(app)/menu.tsx`): Sync jetzt · Auth-Diagnose · Token erneuern · owner_id reparieren · Pending-Count-Anzeige · Diagnose-Log (Teilen/Löschen)
 - [x] Globales Exception-Handling: `ErrorBoundary`-Klassen-Komponente (React-Render-Fehler → `appendLog('RENDER:CRASH')`) + `ErrorUtils.setGlobalHandler` im Root-Layout (unkontrollierte JS-Exceptions → `appendLog('JS:CRASH')`) — beide landen im Menu-Diagnose-Log
 
+### P8 — Datenmodell vereinfachen + Umbenennung (`roadbook`→`trip`, Route-Ebene weg) ✅ (Code) / ⏳ (RLS-Proof via CI)
+> **Namens-Entscheidung (s.u.):** „Roadbook“ ist der **App-Name** (die Sammlung von
+> Straßenreisen), kein Daten-Objekt. Das Top-Level-Objekt heißt **Trip** (UI: „Reise“).
+> Die heutige Tabelle `roadbooks` wird zu **`trips`** umbenannt. Stops hängen direkt
+> am Trip; die Zwischen-Ebene `routes` entfällt (Branchenstandard 2-stufig:
+> Reise → Stops, vgl. Polarsteps/Furkot/Roadie). **Keine relevanten Echtdaten →
+> Migration darf destruktiv sein und Alt-Daten löschen** (einfachster Weg).
+>
+> Zielmodell: `User → viele Trips (= Reise) → Stops → Photos`.
+> Code/DB-Begriff = `trip`/`trips` (engl., wie `stops`/`photos`); UI-Text = „Reise“.
+
+- [x] Neue Migration `0005_collapse_to_trips.sql` (destruktiv ok):
+  - Tabelle `roadbooks` → **`trips`** umbenennen; `start_date` ergänzen
+    (`trip.name` ersetzt das frühere `route.title`)
+  - `routes`-Tabelle entfernen
+  - `stops.route_id` → `stops.trip_id` (FK auf `trips`, `on delete cascade`),
+    analog `idx`-Namen
+  - Alt-Daten in `stops/photos` löschen (kein Backfill nötig)
+- [x] RLS neu fassen (`0002_rls.sql` ist Basis): Policies `roadbook_*`→`trip_*`,
+    `route_*` löschen; `stop_*`/`photo_*` EXISTS-Ketten auf `stops.trip_id → trips`
+    verkürzen (Join über `routes` raus). Migration 0004 (route_insert-Fix) wird obsolet.
+- [x] SQLite-Schema (`src/lib/db/schema.ts`): `roadbooks`→`trips`, `routes` raus,
+    `stops.route_id`→`trip_id`, Indizes anpassen. SQLite lokal droppen & neu anlegen
+    (keine Echtdaten) — Schema-Reset beim Start.
+- [x] Typen/Mapper (`models.ts`): `Roadbook`→**`Trip`** (+ `startDate`),
+    `Route` + `EntityType 'routes'` raus; `EntityType 'roadbooks'`→`'trips'`;
+    `Stop.routeId`→`tripId`; `mappers.ts` (snake↔camel) nachziehen.
+- [x] Repositories (`repositories.ts`): `roadbookRepo`→`tripRepo`, `routeRepo`
+    entfernen, `stopRepo.create` auf `tripId`; Foto-Import (`import.tsx`) erzeugt
+    Stops direkt am Trip (kein Default-Route-Anlegen mehr).
+- [x] Sync-Engine (`syncEngine.ts`): `TABLES` = `['trips','stops','photos']`;
+    Owner-ID-Filter/`repairOwnership` von `roadbooks` auf `trips` umstellen.
+- [x] UI: `app/(app)/roadbook/[id].tsx` → `trip/[id].tsx` (zeigt direkt die Stops),
+    `route/[id].tsx` auflösen, Liste/Karte/Menu auf `tripId` + Label „Reise(n)“.
+- [x] RLS-Test (`scripts/rls-test.ts`) auf 3 Tabellen/`trips` anpassen;
+    `npm run typecheck` + `npm test` + RLS-Proof grün.
+- [x] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
+    auf `Trip`/2-stufig aktualisieren; „Roadbook = App-Name“ festhalten.
+
+### P9 — Cross-Device-Fotos & reale Inbetriebnahme ✅ (Code) / 🔄 (Zwei-Geräte-Test offen)
+> R2-Upload auf echtem Gerät verifiziert (49/49 hochgeladen, Bucket gefüllt,
+> `storage_url` zurücksynchronisiert). Cross-Device-Anzeige im Code gelöst;
+> finaler Zwei-Geräte-Test steht noch aus.
+
+**9a — Fotos cross-device verfügbar machen** ✅
+- [x] Upload in den Sync verlegt (Supabase-Metadaten zuerst, dann R2) — **ein**
+      Upload-Pfad, der zugleich als **Retry** für `pending`/`failed` dient
+      (`syncEngine.pushPhotoUploads`); Sync-Mutex gegen parallele Läufe
+- [x] R2-PUT-Bug gefixt: `FileSystem.uploadAsync` (BINARY_CONTENT) statt
+      `fetch(blob)` — RN kann aus einer `file://`-URI keinen Blob bauen
+- [x] `local_uri` als gerätelokal behandelt: weder pushen noch pullen
+      (`toRemote`/`toLocal`) → Gerät B fällt auf `storage_url` zurück
+- [x] Anzeige nutzt `localUri ?? storageUrl`; `expo-image` cached die R2-URL
+      (Memory+Disk) → kein erneuter Download je Render, offline nach 1. Laden
+- [x] Verifikation Upload auf echtem Gerät (49/49 OK)
+- [ ] Zwei-Geräte-Test: Foto auf Gerät B sichtbar (braucht öffentl. R2-Lesezugriff
+      via `R2_PUBLIC_BASE_URL` + neuen Build mit 9a)
+
+**9b — Reale Inbetriebnahme** ✅
+- [x] Supabase-Cloud: Migrations bis 0005 eingespielt
+- [x] R2-Bucket (Cloudflare) + API-Token (Object Read & Write) + Public-URL
+- [x] R2-Secrets in der Edge Function gesetzt
+- [x] Edge Function `r2-presign` deployt (+ CI-Workflow `supabase-functions.yml`)
+- [x] Installierbares APK via Runner-Build (`eas build --local`, Profil preview)
+- [x] Gerätelauf: Picker/EXIF, Auth, Sync, Foto-Upload end-to-end ✓
+- [ ] offen: MapLibre-Tiles (PMTiles), Zwei-Geräte-Test
+
+---
+
+## Begriffe & Datenmodell ✅ ENTSCHIEDEN
+**„Roadbook“ ist der App-Name** — die Sammlung von Straßenreisen, **kein**
+Daten-Objekt. Das Top-Level-Objekt ist der **Trip** (UI: „Reise“). Verbindliche
+Terminologie, um künftige Verwirrung zu vermeiden:
+
+| Ebene | Code/DB | UI (deutsch) |
+|------|---------|--------------|
+| App / Sammlung | — („Roadbook“ = Produktname) | Roadbook |
+| Top-Level-Objekt | `trip` / `trips` | Reise |
+| Station | `stop` / `stops` | Stopp |
+| Foto | `photo` / `photos` | Foto |
+
+Modell: `User → viele Trips → Stops → Photos` (2-stufig, ohne `routes`).
+- Begründung: Branchenstandard ist 2-stufig (Reise → Stations). Recherche:
+  Polarsteps (Trip → Steps), Furkot (Trip → Stops, Routenlinie implizit), Roadie
+  (Route → Stops). Keine dieser Apps hat eine erzwungene Zwischenebene; Gruppierung
+  vieler Reisen läuft dort über **Tags / Suche**, nicht über einen Eltern-Container.
+- Verworfen: „ein Trip pro User“ (verliert Reise-Trennung) und „Fahrzeug als
+  Container-Ebene“ (erzwingt Pseudo-Navigationsebene).
+- **Fahrzeug-/Tag-Gruppierung** kommt später als Feature (Tags am Trip, vgl.
+  Furkot), nicht als Hierarchie — s. Backlog unten.
+
 ---
 
 ## Stand
-MVP-Code vollständig umgesetzt (P0–P7). Headless verifiziert: `npm run typecheck`,
-`npm test` (25 Tests), `npm run lint` — alle grün. RLS-Isolationsbeweis läuft in CI.
+MVP-Code (P0–P7) + Datenmodell-Vereinfachung (P8) umgesetzt. Headless verifiziert:
+`npm run typecheck`, `npm test` (71 Tests), `npm run lint` — alle grün.
+RLS-Isolationsbeweis läuft in CI (lokal Docker durch Netzwerk-Policy blockiert).
 Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallback,
 Tombstone-RLS-Fix, globales Crash-Logging.
+P8: Modell auf 2-stufig (`Trip → Stop → Photo`), `roadbooks`/`routes` → `trips`,
+Migration `0005`, lokaler SQLite-Schema-Reset (PRAGMA user_version = 2).
 **Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
 R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
-**Migrations 0003 + 0004** müssen im Cloud-Projekt einmalig eingespielt werden
-(via `supabase db push` oder Supabase SQL-Editor).
+**Migrations 0003 + 0004** sind im Cloud-Projekt bereits eingespielt. Migration
+**0005** (P8) muss noch via `supabase db push` (oder SQL-Editor) eingespielt werden
+— danach ist 0004 obsolet (Route-Policies entfallen).
 
 ---
 
@@ -94,6 +189,38 @@ R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
 Payment/Abo · Sharing-UI · Store-Submission · DSGVO-Volltexte · volle Sync-Engine
 (PowerSync/WatermelonDB) · §8.1-Backlog. Schema ist für Sharing & Offline-Sync
 bereits vorbereitet.
+
+## Zukunfts-Features (nach P8/P9)
+- **Tag-System für Reisen** (Backlog, nicht sofort): freie Tags an einem **Trip**,
+  inkl. **Fahrzeug** als Tag (z.B. „Dethleffs“, „Sunlight“) → Filter „alle Reisen
+  mit dem Dethleffs“. Vorbild Furkot (Tags statt Hierarchie). Ersetzt die früher
+  angedachte Fahrzeug-Ebene.
+- **Reise-Diashow / Wiedergabemodus** (Play-Button, README §8.1 Tier 2): Reise in
+  der App abspielen — Intro-Karte (Zeitraum, Tage, Stopps, km, Länder), dann Etappe
+  für Etappe mit Karten-Kamerafahrt (`flyTo`/`fitBounds`), progressiv wachsender
+  Routenlinie und Foto-Slides. Sequenz-Logik RN-frei in `src/lib/` (Jest-testbar);
+  Player-UI + Animation obendrauf. **Setzt auf Track-Geometrie auf:** Karte zeichnet
+  heute nur **Luftlinien** zwischen Stopps (`MapView.tsx`, `lineCoords`) → mit
+  **Tracks** aus GPX-/Google-Timeline-Import (internes Routenmodell, §8.1-Anker)
+  folgt die Linie der echten Strecke; Fallback bleibt Luftlinie. **Teilt die
+  Sequenz-Engine mit dem Reise-Story-Export** (In-App zuerst, MP4/Web-Link-Export
+  als Aufsatz).
+
+## Bekannte Limits der MVP-Sync-Engine
+- **Löschungen propagieren nicht per Pull auf bereits synchronisierte Geräte.**
+  Die SELECT-RLS filtert `deleted_at IS NULL` (`0002_rls.sql`), also liefert
+  `pullChanges` **keine Tombstones**. Folge: Ein Soft-Delete wird nur vom
+  *löschenden* Gerät hochgepusht; andere Geräte, die die Zeile schon lokal haben,
+  erfahren nichts und behalten sie. Aufräumen daher **immer in der App auf dem
+  Gerät, das die Zeile sieht** — nicht direkt in der Cloud (sonst bleibt die
+  lokale Kopie hängen). Echte Lösung gehört in die Post-MVP-Sync-Engine
+  (Tombstone-Sichtbarkeit / eigener „deleted“-Pull-Kanal mit `since`-Filter).
+- **Dubletten entstehen nicht durch Doppel-Sync** (alles dedupt über die
+  Client-UUID via `ON CONFLICT(id)`), sondern wenn dieselbe Reise unter **zwei
+  UUIDs** angelegt/gepusht wurde (z. B. Reinstall + Neuanlage in der Testphase).
+  Ein Frischgerät zieht ab Wasserstand `1970` **alles** und macht solche Cloud-
+  Dubletten als Erstes sichtbar. `SYNC:PULL`-Log (seit 2026-06) zeigt die Zeilen-
+  zahl pro Tabelle → Dublette sofort erkennbar.
 
 ## Hinweise für die Fortsetzung nach Pause
 - Branch: `claude/app-ui-data-persistence-e96qb`

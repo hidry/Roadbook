@@ -39,6 +39,11 @@ quota). See DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device
   Source of Truth); the sync engine (`src/lib/sync/`) pushes to Supabase later.
   Don't write straight to Supabase from the UI.
+- **Data model** (`src/types/models.ts`): `User → Trips → Stops → Photos`.
+  "Roadbook" is the **app name**, not a table; the top-level entity is a **`Trip`**
+  (UI label: "Reise"). Stops reference their trip directly — there is **no** `routes`
+  table (removed in migration `0005`; the "route" you see in `suggestion.ts`/
+  `RouteMap` is the drawn path, not a DB entity).
 - **All tables extend `SyncBase`** (`src/types/models.ts`): client-generated UUID
   PK (never serial), `createdAt`/`updatedAt`, `deletedAt`. **"Delete" = soft-delete**
   (set `deletedAt`); no hard DELETE in normal flow.
