@@ -7,6 +7,7 @@ import { parseKml } from './kml';
 import type { RouteModel } from './types';
 
 export * from './types';
+export * from './trip-convert';
 export { toGpx } from './gpx';
 export { parseKmlCoordinates, toKml } from './kml';
 export { parseGpx, parseKml };

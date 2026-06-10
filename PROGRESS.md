@@ -280,6 +280,22 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Tests: Track-Mapper-Roundtrip + Fallback, Tombstone-Gruppierung mit
       `tracks`; RLS-Test +3 Checks (Insert eigene/fremde, fremdes SELECT)
 
+### P17 — GPX/KML-Import & GPX-Export (UI) ✅ (Code) / ⏳ (Gerätelauf)
+> Schließt §8.1 Tier 2 „GPX/KML Import & Export" ab: Datei rein → Vorschau →
+> Stopps+Tracks am Trip; Trip raus als GPX (teilen). KMZ weiterhin offen.
+
+- [x] `trip-convert.ts` (PURE): `stopsFromModel` (hinten anhängen; nur bei
+      leerem Trip wird der erste Punkt `start`; `arrivalDate` aus `time`),
+      `tracksFromModel` (<2 Punkte verworfen), `modelFromTrip` (0/0-Stopps
+      übersprungen) — 5 Unit-Tests
+- [x] UI Trip-Screen, Karte „Import & Export": Datei-Picker (`*/*`, Format
+      entscheidet `parseRouteFile`) → Bestätigungs-Dialog mit Statistik →
+      Anlegen + Sync; Export schreibt GPX in den Cache und öffnet das
+      Teilen-Sheet (`expo-sharing`); Export deaktiviert ohne Geo-Daten
+- [x] Neue Deps: `expo-document-picker`, `expo-sharing` (@56) — **native
+      Module → neuer Dev-Client-/EAS-Build nötig** (wie MapLibre/SQLite)
+- [⏳] Gerätelauf (Picker/Share-Sheet) steht aus — headless nicht testbar
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -325,7 +341,7 @@ Migration `0007` + Cron `r2-gc.yml`).
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
 Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
 ✅ P15 internes Routenmodell + GPX/KML-Adapter → ✅ P16 Track-Persistenz + Karte →
-P17 Import-/Export-UI → Tags → Reise-Diashow.
+✅ P17 Import-/Export-UI → Tags → Reise-Diashow.
 
 ---
 

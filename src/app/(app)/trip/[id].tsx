@@ -1,5 +1,8 @@
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from 'react-native-draggable-flatlist';
+import * as DocumentPicker from 'expo-document-picker';
+import { cacheDirectory, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { useCallback, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +12,14 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { stopRepo, trackRepo, tripRepo } from '@/lib/db/repositories';
+import {
+  modelFromTrip,
+  parseRouteFile,
+  routeModelStats,
+  stopsFromModel,
+  toGpx,
+  tracksFromModel,
+} from '@/lib/route-model';
 import { syncNow } from '@/lib/sync/syncEngine';
 import { normalizeHttpUrl } from '@/lib/util/url';
 import type { Stop, StopType, Track, Trip } from '@/types/models';
@@ -102,6 +113,66 @@ export default function TripScreen() {
     syncAfterWrite();
   }
 
+  async function importRouteFile() {
+    const res = await DocumentPicker.getDocumentAsync({
+      // GPX/KML have no reliable registered MIME type across pickers — accept
+      // everything and let parseRouteFile decide (extension + content sniff).
+      type: '*/*',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const asset = res.assets[0];
+    try {
+      const content = await readAsStringAsync(asset.uri);
+      const model = parseRouteFile(asset.name ?? 'datei.xml', content);
+      const stats = routeModelStats(model);
+      if (stats.stops === 0 && stats.trackPoints === 0) {
+        Alert.alert('Import', 'Die Datei enthält keine Stopps oder Tracks.');
+        return;
+      }
+      Alert.alert(
+        'Route importieren?',
+        `${asset.name}\n${stats.stops} Stopp(s), ${stats.tracks} Track(s) mit ${stats.trackPoints} Punkten`,
+        [
+          { text: 'Abbrechen', style: 'cancel' },
+          {
+            text: 'Importieren',
+            onPress: async () => {
+              for (const s of stopsFromModel(model, stops.length)) {
+                await stopRepo.create({ tripId: id, ...s });
+              }
+              for (const t of tracksFromModel(model)) {
+                await trackRepo.create({ tripId: id, ...t });
+              }
+              await load();
+              syncAfterWrite();
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      Alert.alert('Import fehlgeschlagen', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function exportGpx() {
+    if (!trip) return;
+    try {
+      const gpx = toGpx(modelFromTrip(trip.name, stops, tracks));
+      const fileName = `${trip.name.replace(/[^\wäöüÄÖÜß-]+/g, '_') || 'reise'}.gpx`;
+      const uri = `${cacheDirectory}${fileName}`;
+      await writeAsStringAsync(uri, gpx);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/gpx+xml', dialogTitle: 'Reise als GPX teilen' });
+      } else {
+        Alert.alert('Export', `GPX gespeichert unter:\n${uri}`);
+      }
+    } catch (e) {
+      Alert.alert('Export fehlgeschlagen', e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function handleDragEnd({ data }: { data: Stop[] }) {
     const reordered = data.map((s, i) => ({ ...s, position: i }));
     setStops(reordered);
@@ -182,6 +253,16 @@ export default function TripScreen() {
           title="📷 Stopps aus Fotos vorschlagen"
           variant="secondary"
           onPress={() => router.push({ pathname: '/import', params: { tripId: id } })}
+        />
+      </Card>
+      <Card style={styles.headerCard}>
+        <ThemedText type="smallBold">Import & Export</ThemedText>
+        <Button title="🗺 GPX/KML importieren" variant="secondary" onPress={importRouteFile} />
+        <Button
+          title="📤 Als GPX exportieren"
+          variant="secondary"
+          onPress={exportGpx}
+          disabled={stops.every((s) => s.lat === 0 && s.lng === 0) && tracks.length === 0}
         />
       </Card>
     </>
