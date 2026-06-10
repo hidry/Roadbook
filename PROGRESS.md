@@ -241,6 +241,26 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] `.env.example`: optionale Endpoint-Overrides
       (`EXPO_PUBLIC_WEATHER_FORECAST_URL` / `_ARCHIVE_URL`)
 
+### P15 — Internes Routenmodell + GPX/KML-Adapter (Architektur-Anker, §8.1) ✅
+> Der §8.1-Anker: jede Importquelle konvertiert über einen Adapter in ein
+> **neutrales Routenmodell** (Stops, Tracks, Zeit), jeder Export entsteht
+> daraus. Deckt Google MyMaps (KML), Komoot/Garmin/OsmAnd/Strava (GPX) ab.
+
+- [x] `src/lib/route-model/` (PURE, RN-frei): `RouteModel { name, stops:
+      RoutePoint[], tracks: RouteTrack[] }` — bewusst NICHT die DB-Form
+      (keine role/position); die Zuordnung passiert erst im Import-Flow
+- [x] GPX-Adapter: `wpt`→Stops, `trk/trkseg`→Track (Segmente eines trk
+      konkateniert), `rte/rtept`→Stops; Export als GPX 1.1; ungültige
+      Koordinaten werden übersprungen
+- [x] KML-Adapter: Placemark/Point→Stop, LineString→Track, Folder/Document
+      rekursiv, MultiGeometry; Export als KML 2.2. **KMZ (gezippt) offen**
+- [x] `detectRouteFormat` (Extension, dann Content-Sniffing) +
+      `parseRouteFile`-Dispatch mit deutschen Fehlermeldungen
+- [x] Dependency: `fast-xml-parser` (pure JS, RN-tauglich, kein DOM nötig)
+- [x] 12 Unit-Tests inkl. Roundtrips (auch XML-Escaping `&`) — grün
+- [ ] Folgeschritte: Track-Persistenz (`tracks`-Tabelle) + Karte zeichnet
+      Tracks (P16), Import-/Export-UI (P17)
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -285,7 +305,8 @@ Migration `0007` + Cron `r2-gc.yml`).
 **Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
 Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
-internes Routenmodell + GPX/KML-Import (Architektur-Anker) → Tags → Reise-Diashow.
+✅ P15 internes Routenmodell + GPX/KML-Adapter → P16 Track-Persistenz + Karte →
+P17 Import-/Export-UI → Tags → Reise-Diashow.
 
 ---
 
