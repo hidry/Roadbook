@@ -2,13 +2,14 @@
  * Public surface of the internal route model (README §8.1 architecture anchor)
  * and its format adapters. PURE — no React Native imports.
  */
-export * from './types';
-export { parseGpx, toGpx } from './gpx';
-export { parseKml, parseKmlCoordinates, toKml } from './kml';
-
 import { parseGpx } from './gpx';
 import { parseKml } from './kml';
 import type { RouteModel } from './types';
+
+export * from './types';
+export { toGpx } from './gpx';
+export { parseKmlCoordinates, toKml } from './kml';
+export { parseGpx, parseKml };
 
 export type RouteFileFormat = 'gpx' | 'kml';
 
