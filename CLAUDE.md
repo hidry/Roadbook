@@ -28,12 +28,15 @@ on PR branches) + `workflow_dispatch`. To save runner minutes: each has a
 (paths-filter) job that gates the heavy work on PRs — the E2E jobs skip when no
 app/native files changed, and `ci.yml`'s Supabase RLS job skips when no DB code
 changed (a skipped job reports "passing", so required checks aren't blocked).
-Plus two ops pipelines: `supabase-migrate.yml`
-(`supabase db push` of the cloud migrations) and two manual (`workflow_dispatch`)
-Android build pipelines: `eas-build-android.yml` (CLOUD EAS build — uses the
-limited free build quota) and `eas-build-android-runner.yml` (compiles on the
-GitHub runner via `eas build --local` — installable APK artifact, NO cloud
-quota). See DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green.
+Plus ops pipelines: `supabase-migrate.yml`
+(`supabase db push` of the cloud migrations), `supabase-functions.yml` (deploys
+Edge Functions), `r2-gc.yml` (weekly cron: hard-deletes R2 objects of
+soft-deleted photos via the `r2-gc` Edge Function) and two manual
+(`workflow_dispatch`) Android build pipelines: `eas-build-android.yml` (CLOUD
+EAS build — uses the limited free build quota) and
+`eas-build-android-runner.yml` (compiles on the GitHub runner via
+`eas build --local` — installable APK artifact, NO cloud quota). See
+DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green.
 
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device

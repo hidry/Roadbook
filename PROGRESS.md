@@ -169,6 +169,30 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [⏳] RLS-Proof läuft in CI (lokal Docker durch Netzwerk-Policy blockiert);
       Migration 0006 geht beim Merge automatisch via `supabase-migrate.yml` live.
 
+### P11 — R2-Lösch-Lebenszyklus (Garbage Collector) ✅ (Code) / ⏳ (Erstlauf nach Merge)
+> README §7: Soft-Delete tombstoned nur die DB-Zeile — das R2-Objekt bliebe für
+> immer liegen (Kosten + DSGVO-Verstoß). Jetzt räumt ein periodischer GC auf.
+
+- [x] Migration `0007_r2_gc.sql`: RPC `photos_to_purge()` — Fotos mit
+      `storage_url`, deren Zeile **oder** deren Stop/Trip soft-gelöscht ist;
+      SECURITY INVOKER, EXECUTE **nur** für `service_role` (bypasst RLS).
+- [x] Edge Function `r2-gc`: verlangt den `service_role`-Key als Bearer (nicht
+      user-aufrufbar), löscht die R2-Objekte hart (SigV4 DELETE, 404 = schon
+      weg), validiert den Objekt-Key gegen das `user/photo.jpg`-Muster (löscht
+      nie beliebige Keys), tombstoned danach die Foto-Zeile + `storage_url=null`
+      → nächster Lauf überspringt sie, Geräte ziehen die Löschung via
+      `pull_tombstones` (P10) nach. Kaskade gelöst: Foto unter gelöschtem
+      Stop/Trip bekommt sein eigenes `deleted_at` → kein Re-Upload durch Sync.
+- [x] Workflow `r2-gc.yml`: wöchentlicher Cron (Mo 03:23 UTC) + manueller
+      Dispatch; ruft die Funktion mit dem Service-Role-Key auf.
+- [x] Doku: README §7-Checkliste abgehakt, DEVELOPMENT.md (R2-Abschnitt),
+      CLAUDE.md (Ops-Pipelines).
+- [⏳] **Setup nach Merge:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` anlegen
+      (Dashboard → Settings → API); Function deployt `supabase-functions.yml`
+      automatisch, Migration 0007 `supabase-migrate.yml`. Danach Erstlauf
+      manuell via Actions → „R2 garbage collector" und Summary prüfen
+      (`candidates/purged/failures`).
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -207,8 +231,13 @@ Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallba
 Tombstone-RLS-Fix, globales Crash-Logging.
 P8: Modell auf 2-stufig (`Trip → Stop → Photo`), `roadbooks`/`routes` → `trips`,
 Migration `0005`, lokaler SQLite-Schema-Reset (PRAGMA user_version = 2).
-**Nächste Schritte (Post-MVP):** P10 Tombstone-Sync (Lösch-Propagation), P11
-R2-Lösch-Lebenszyklus (GC), danach Feature-Backlog (README §8.1).
+**Post-MVP umgesetzt:** P10 Tombstone-Sync (Lösch-Propagation auf andere Geräte,
+Migration `0006`) + P11 R2-Lösch-Lebenszyklus (GC: Edge Function `r2-gc` +
+Migration `0007` + Cron `r2-gc.yml`).
+**Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
+(s. P11), danach Feature-Backlog (README §8.1): Tier-1-Quick-Wins
+(Ver-/Entsorgungs-Stopp-Typ, Strava-Link, Wetter), dann internes Routenmodell +
+GPX/KML-Import (Architektur-Anker), Tags, Reise-Diashow.
 
 ---
 
