@@ -38,7 +38,9 @@ quota). See DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device
   Source of Truth); the sync engine (`src/lib/sync/`) pushes to Supabase later.
-  Don't write straight to Supabase from the UI.
+  Don't write straight to Supabase from the UI. Deletions reach other devices
+  via the `pull_tombstones` RPC (migration `0006`) — the regular pull can't see
+  them because SELECT-RLS filters `deleted_at IS NULL`.
 - **Data model** (`src/types/models.ts`): `User → Trips → Stops → Photos`.
   "Roadbook" is the **app name**, not a table; the top-level entity is a **`Trip`**
   (UI label: "Reise"). Stops reference their trip directly — there is **no** `routes`

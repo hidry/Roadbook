@@ -144,6 +144,31 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] MapLibre-Tiles eingerichtet (Style-URL via env, PMTiles) ✓
 - [x] Zwei-Geräte-Test bestanden ✓ (s. 9a)
 
+### P10 — Tombstone-Sync: Löschungen propagieren auf andere Geräte ✅ (Code) / ⏳ (RLS-Proof via CI)
+> Schließt das erste „Bekannte Limit" der MVP-Sync-Engine: Die SELECT-RLS filtert
+> `deleted_at IS NULL`, daher sah `pullChanges` nie Tombstones — ein Soft-Delete
+> blieb auf allen anderen Geräten liegen. Jetzt gibt es einen eigenen
+> Lösch-Pull-Kanal.
+
+- [x] Migration `0006_tombstone_pull.sql`: RPC `pull_tombstones(since)` —
+      SECURITY DEFINER (umgeht den `deleted_at`-Filter), re-implementiert die
+      Ownership-Checks der Policies selbst (owner/`shared_with` via Trip-Kette);
+      liefert nur `tbl/id/deleted_at/updated_at`, keine Nutzdaten; EXECUTE nur
+      für `authenticated`. Eltern-`deleted_at` wird bewusst NICHT gefiltert
+      (Stop-Tombstone unter gelöschtem Trip muss ankommen).
+- [x] `syncEngine.pullTombstones()`: eigener Wasserstand
+      (`sync:lastTombstonePull`), wendet Löschungen per LWW an
+      (`updated_at < remote` — eine NEUERE lokale Änderung überlebt), unbekannte
+      Zeilen werden übersprungen; läuft in `syncNow` direkt nach `pullChanges`.
+- [x] `src/lib/sync/tombstones.ts` (PURE, RN-frei): Gruppierung +
+      Tabellen-Whitelist (`tbl` landet in SQL → Injection-Schutz) +
+      Wasserstand-Berechnung; Unit-Tests in `__tests__/tombstones.test.ts`.
+- [x] `scripts/rls-test.ts` um 4 Checks erweitert: A zieht eigenen
+      Stop-Tombstone; B sieht A's Tombstones NICHT; `since`-Wasserstand filtert;
+      Trip-Tombstone + Stop-Tombstone unter gelöschtem Trip kommen beide an.
+- [⏳] RLS-Proof läuft in CI (lokal Docker durch Netzwerk-Policy blockiert);
+      Migration 0006 geht beim Merge automatisch via `supabase-migrate.yml` live.
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -209,14 +234,14 @@ bereits vorbereitet.
   als Aufsatz).
 
 ## Bekannte Limits der MVP-Sync-Engine
-- **Löschungen propagieren nicht per Pull auf bereits synchronisierte Geräte.**
-  Die SELECT-RLS filtert `deleted_at IS NULL` (`0002_rls.sql`), also liefert
-  `pullChanges` **keine Tombstones**. Folge: Ein Soft-Delete wird nur vom
-  *löschenden* Gerät hochgepusht; andere Geräte, die die Zeile schon lokal haben,
-  erfahren nichts und behalten sie. Aufräumen daher **immer in der App auf dem
-  Gerät, das die Zeile sieht** — nicht direkt in der Cloud (sonst bleibt die
-  lokale Kopie hängen). Echte Lösung gehört in die Post-MVP-Sync-Engine
-  (Tombstone-Sichtbarkeit / eigener „deleted“-Pull-Kanal mit `since`-Filter).
+- ✅ **GELÖST (P10, Migration `0006`): Löschungen propagieren jetzt auch per Pull.**
+  Früher: Die SELECT-RLS filtert `deleted_at IS NULL`, also lieferte
+  `pullChanges` keine Tombstones — ein Soft-Delete blieb auf anderen Geräten
+  liegen. Jetzt zieht `syncEngine.pullTombstones()` Löschungen über die RPC
+  `pull_tombstones` (eigener Kanal mit `since`-Wasserstand) und wendet sie per
+  Last-write-wins lokal an. Damit ist auch das Aufräumen **direkt in der Cloud**
+  (SQL-Editor: `deleted_at` setzen) zulässig — die Geräte ziehen die Löschung
+  beim nächsten Sync nach.
 - **Dubletten entstehen nicht durch Doppel-Sync** (alles dedupt über die
   Client-UUID via `ON CONFLICT(id)`), sondern wenn dieselbe Reise unter **zwei
   UUIDs** angelegt/gepusht wurde (z. B. Reinstall + Neuanlage in der Testphase).

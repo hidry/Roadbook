@@ -2,6 +2,8 @@
  * RLS tenant-isolation test (README §12a — "the security proof of tenant
  * separation"). Creates two real users and asserts that user A can never read or
  * write user B's data, across SELECT / INSERT / UPDATE and the child tables.
+ * Also proves the tombstone pull channel (`pull_tombstones`, migration 0006)
+ * only ever returns the caller's own soft-deletes.
  *
  * Run against a LOCAL Supabase (`supabase start`) — never production. The
  * service-role key (used only to create/delete the test users) BYPASSES RLS, so
@@ -110,6 +112,45 @@ async function main() {
   // 7) A can still SELECT its own trip (positive control).
   const selA = await a.client.from('trips').select('*').eq('id', tripId);
   check('A can SELECT its own trip', !selA.error && (selA.data?.length ?? 0) === 1, `rows=${selA.data?.length}`);
+
+  // ── Tombstone pull channel (migration 0006) ────────────────────────────────
+  type Tombstone = { tbl: string; id: string; deleted_at: string; updated_at: string };
+  const EPOCH = '1970-01-01T00:00:00.000Z';
+
+  // 8) A soft-deletes its stop → pull_tombstones returns it for A.
+  const delTs = nowIso();
+  await a.client.from('stops').update({ deleted_at: delTs, updated_at: delTs }).eq('id', stId);
+  const tombA = await a.client.rpc('pull_tombstones', { since: EPOCH });
+  const rowsA = (tombA.data ?? []) as Tombstone[];
+  check(
+    'A pulls its own stop tombstone',
+    !tombA.error && rowsA.some((t) => t.tbl === 'stops' && t.id === stId),
+    tombA.error?.message ?? `rows=${rowsA.length}`,
+  );
+
+  // 9) B must NOT see A's tombstones (SECURITY DEFINER re-checks ownership).
+  const tombB = await b.client.rpc('pull_tombstones', { since: EPOCH });
+  const rowsB = (tombB.data ?? []) as Tombstone[];
+  check('B cannot pull A tombstones', !tombB.error && rowsB.length === 0, tombB.error?.message ?? `rows=${rowsB.length}`);
+
+  // 10) The since watermark filters already-pulled tombstones.
+  const tombSince = await a.client.rpc('pull_tombstones', { since: nowIso() });
+  const rowsSince = (tombSince.data ?? []) as Tombstone[];
+  check('since watermark excludes old tombstones', !tombSince.error && rowsSince.length === 0, `rows=${rowsSince.length}`);
+
+  // 11) Deleting the parent trip: trip tombstone appears AND the stop tombstone
+  //     under the now-deleted trip is still delivered (no parent deleted_at guard).
+  const delTrip = nowIso();
+  await a.client.from('trips').update({ deleted_at: delTrip, updated_at: delTrip }).eq('id', tripId);
+  const tombA2 = await a.client.rpc('pull_tombstones', { since: EPOCH });
+  const rowsA2 = (tombA2.data ?? []) as Tombstone[];
+  check(
+    'A pulls trip tombstone + stop tombstone under deleted trip',
+    !tombA2.error &&
+      rowsA2.some((t) => t.tbl === 'trips' && t.id === tripId) &&
+      rowsA2.some((t) => t.tbl === 'stops' && t.id === stId),
+    tombA2.error?.message ?? `rows=${rowsA2.length}`,
+  );
 
   // Cleanup — removing the users cascades their data (owner_id ON DELETE CASCADE).
   await admin.auth.admin.deleteUser(a.id);
