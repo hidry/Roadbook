@@ -225,6 +225,22 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] UI Trip-Screen: Eingabefeld (Speichern bei Blur, Validierungsfehler
       inline) + „In Strava öffnen"-Button
 
+### P14 — Tier-1-Feature: Wetter pro Stopp ✅
+> README §8.1 Tier 1: Koordinaten liegen vor; **Open-Meteo** ist frei (kein
+> Key/keine Kosten). Wetter ist Deko — best-effort, blockiert nie.
+
+- [x] `src/lib/weather/` (PURE, RN-frei): Datums-Routing (älter als 7 Tage →
+      ERA5-**Archive**-API wegen Nachlauf; letzte Woche bis +16 Tage →
+      **Forecast**-API; weiter weg → null), URL-Bau, Response-Parsing,
+      WMO-Code → Emoji + deutsches Label, Kompakt-Formatierung,
+      `fetchDailyWeather` mit Timeout — liefert bei JEDEM Fehler null
+- [x] Unit-Tests (`__tests__/weather.test.ts`): Routing-Grenzen, URL-Inhalt,
+      Parsing, Formatierung, fetch-Mocks (OK/HTTP-Fehler/offline/out-of-range)
+- [x] UI Stopp-Screen: einzeilige Wetter-Anzeige (Ankunftsdatum, sonst heute)
+      unter dem Ankunftsfeld; nur wenn Koordinaten gesetzt sind
+- [x] `.env.example`: optionale Endpoint-Overrides
+      (`EXPO_PUBLIC_WEATHER_FORECAST_URL` / `_ARCHIVE_URL`)
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
@@ -268,8 +284,8 @@ Migration `0006`) + P11 R2-Lösch-Lebenszyklus (GC: Edge Function `r2-gc` +
 Migration `0007` + Cron `r2-gc.yml`).
 **Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
 (s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
-Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → Wetter pro Stopp → internes
-Routenmodell + GPX/KML-Import (Architektur-Anker) → Tags → Reise-Diashow.
+Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
+internes Routenmodell + GPX/KML-Import (Architektur-Anker) → Tags → Reise-Diashow.
 
 ---
 
