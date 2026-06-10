@@ -1,7 +1,9 @@
 # Roadbook MVP — Fortschritt
 
-> Tracking-Datei für die MVP-Umsetzung (README §8). Nach jeder Phase abhaken +
-> committen + pushen auf `claude/plane-project-mvp-6I6WO`.
+> Tracking-Datei für die MVP-Umsetzung (README §8) und die Post-MVP-Phasen.
+> **Konvention: eine abgeschlossene Aufgabe = ein eigener Commit** (Code + Doku
+> zusammen, keine Sammel-Commits) — nach jeder Phase hier abhaken, committen und
+> auf den jeweiligen Arbeits-Branch pushen.
 > Status-Legende: ⬜ offen · 🔄 in Arbeit · ✅ fertig
 
 **Umgebung:** Expo SDK 56 (README nannte SDK 55; Registry serviert 56 stabil) ·

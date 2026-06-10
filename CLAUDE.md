@@ -38,6 +38,12 @@ EAS build — uses the limited free build quota) and
 `eas build --local` — installable APK artifact, NO cloud quota). See
 DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green.
 
+## Workflow
+- **One commit per completed task.** Every finished task/phase gets its own
+  commit — code AND its documentation updates (PROGRESS.md etc.) together.
+  Never bundle several tasks into one commit; never split one task's code and
+  docs across commits. Push after the task is committed.
+
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device
   Source of Truth); the sync engine (`src/lib/sync/`) pushes to Supabase later.
