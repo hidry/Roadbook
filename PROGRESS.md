@@ -332,6 +332,20 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       Trip-Screen (deaktiviert ohne lokalisierte Stopps)
 - [⏳] Gerätelauf (Kamera-Animation/Performance) steht aus
 
+### P20 — CI-Fix: explizite Tabellen-GRANTs (Migration `0012`) ✅
+> RLS-Job in CI rot mit „permission denied for table trips" — **vor** jeder
+> RLS-Prüfung. Ursache: Der Runner zieht die Supabase-CLI mit `version:
+> latest`; neuere lokale Stacks legen Migrations-Tabellen nicht mehr mit den
+> alten Default-Privilegien (`GRANT ALL … TO authenticated`) an. `main` war
+> aus demselben Grund bereits rot (Run 80, 2026-06-10, vor diesem Branch).
+
+- [x] Migration `0012_grants.sql`: minimale explizite GRANTs —
+      `authenticated`: SELECT/INSERT/UPDATE (bewusst **kein** DELETE =
+      Soft-Delete-Prinzip §5.4), `service_role`: alles, `anon`: nichts auf
+      Datentabellen; `alter default privileges` für künftige Tabellen.
+      Idempotent (auf alten Stacks No-op), geht via `supabase db push` auch
+      in die Cloud (dort harmlos).
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN
