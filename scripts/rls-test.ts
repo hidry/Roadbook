@@ -143,8 +143,20 @@ async function main() {
   const EPOCH = '1970-01-01T00:00:00.000Z';
 
   // 8) A soft-deletes its stop → pull_tombstones returns it for A.
+  //    The soft-delete is asserted explicitly (with RETURNING via .select(),
+  //    visible to the owner through the tombstone SELECT policies, 0013) so a
+  //    failure here pinpoints the precondition instead of a silent rows=0.
   const delTs = nowIso();
-  await a.client.from('stops').update({ deleted_at: delTs, updated_at: delTs }).eq('id', stId);
+  const delStop = await a.client
+    .from('stops')
+    .update({ deleted_at: delTs, updated_at: delTs })
+    .eq('id', stId)
+    .select('id');
+  check(
+    'A can soft-delete its stop',
+    !delStop.error && (delStop.data?.length ?? 0) === 1,
+    delStop.error?.message ?? `rows=${delStop.data?.length}`,
+  );
   const tombA = await a.client.rpc('pull_tombstones', { since: EPOCH });
   const rowsA = (tombA.data ?? []) as Tombstone[];
   check(
@@ -166,7 +178,16 @@ async function main() {
   // 11) Deleting the parent trip: trip tombstone appears AND the stop tombstone
   //     under the now-deleted trip is still delivered (no parent deleted_at guard).
   const delTrip = nowIso();
-  await a.client.from('trips').update({ deleted_at: delTrip, updated_at: delTrip }).eq('id', tripId);
+  const delTripRes = await a.client
+    .from('trips')
+    .update({ deleted_at: delTrip, updated_at: delTrip })
+    .eq('id', tripId)
+    .select('id');
+  check(
+    'A can soft-delete its trip',
+    !delTripRes.error && (delTripRes.data?.length ?? 0) === 1,
+    delTripRes.error?.message ?? `rows=${delTripRes.data?.length}`,
+  );
   const tombA2 = await a.client.rpc('pull_tombstones', { since: EPOCH });
   const rowsA2 = (tombA2.data ?? []) as Tombstone[];
   check(

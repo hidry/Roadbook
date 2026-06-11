@@ -345,6 +345,15 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       Datentabellen; `alter default privileges` für künftige Tabellen.
       Idempotent (auf alten Stacks No-op), geht via `supabase db push` auch
       in die Cloud (dort harmlos).
+- [x] **Nachfix (Migration `0013`):** Nach 0012 waren 13/15 Checks grün, aber
+      die SECURITY-DEFINER-RPC `pull_tombstones` lieferte 0 Zeilen — neuere
+      Stacks garantieren den RLS-Bypass des Funktions-Owners nicht mehr.
+      Tombstones sind jetzt **first-class unter RLS**: je Tabelle eine
+      zusätzliche SELECT-Policy „eigene gelöschte Zeilen" (Eltern-Guards
+      bewusst weggelassen), RPC auf **SECURITY INVOKER** umgestellt (liest im
+      Aufrufer-Kontext — der Pfad, den die grünen Checks beweisen). Bonus:
+      auch der normale Pull sieht Löschungen jetzt mit. RLS-Test prüft die
+      Soft-Delete-Vorbedingungen jetzt explizit (+2 Checks).
 
 ---
 
