@@ -10,12 +10,14 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { photoRepo, stopRepo } from '@/lib/db/repositories';
 import { syncNow } from '@/lib/sync/syncEngine';
+import { fetchDailyWeather, formatDailyWeather } from '@/lib/weather';
 import type { Photo, Stop, StopRole, StopType } from '@/types/models';
 
 const TYPES: { value: StopType; label: string }[] = [
   { value: 'campingplatz', label: 'Campingplatz' },
   { value: 'stellplatz', label: 'Stellplatz' },
   { value: 'freistehend', label: 'Freistehend' },
+  { value: 'verentsorgung', label: 'Ver-/Entsorgung' },
 ];
 const ROLES: { value: StopRole; label: string }[] = [
   { value: 'start', label: 'Start' },
@@ -38,8 +40,10 @@ export default function StopScreen() {
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [weather, setWeather] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const s = await stopRepo.get(id);
       if (!s) return;
@@ -52,7 +56,18 @@ export default function StopScreen() {
       setArrival(s.arrivalDate ?? '');
       setNotes(s.notes ?? '');
       setPhotos(await photoRepo.listByStop(id));
+
+      // Weather is decoration: best-effort, never blocks the screen (README
+      // §8.1 Tier 1). Date = arrival date if set, otherwise today.
+      if (s.lat !== 0 || s.lng !== 0) {
+        const date = s.arrivalDate ?? new Date().toISOString().slice(0, 10);
+        const w = await fetchDailyWeather(s.lat, s.lng, date);
+        if (!cancelled && w) setWeather(`${formatDailyWeather(w)} (${w.date})`);
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   async function save() {
@@ -121,6 +136,7 @@ export default function StopScreen() {
           </View>
         </View>
         <TextField label="Ankunft (YYYY-MM-DD)" value={arrival} onChangeText={setArrival} placeholder="2026-07-14" />
+        {weather ? <ThemedText type="small">{weather}</ThemedText> : null}
         <TextField label="Notizen" value={notes} onChangeText={setNotes} multiline style={styles.notes} />
       </Card>
 

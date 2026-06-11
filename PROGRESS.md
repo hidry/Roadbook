@@ -1,7 +1,9 @@
 # Roadbook MVP — Fortschritt
 
-> Tracking-Datei für die MVP-Umsetzung (README §8). Nach jeder Phase abhaken +
-> committen + pushen auf `claude/plane-project-mvp-6I6WO`.
+> Tracking-Datei für die MVP-Umsetzung (README §8) und die Post-MVP-Phasen.
+> **Konvention: eine abgeschlossene Aufgabe = ein eigener Commit** (Code + Doku
+> zusammen, keine Sammel-Commits) — nach jeder Phase hier abhaken, committen und
+> auf den jeweiligen Arbeits-Branch pushen.
 > Status-Legende: ⬜ offen · 🔄 in Arbeit · ✅ fertig
 
 **Umgebung:** Expo SDK 56 (README nannte SDK 55; Registry serviert 56 stabil) ·
@@ -115,10 +117,10 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Doku: README §5-Datenmodell + CLAUDE.md (Beispiele nennen `route`/`roadbook`)
     auf `Trip`/2-stufig aktualisieren; „Roadbook = App-Name“ festhalten.
 
-### P9 — Cross-Device-Fotos & reale Inbetriebnahme ✅ (Code) / 🔄 (Zwei-Geräte-Test offen)
+### P9 — Cross-Device-Fotos & reale Inbetriebnahme ✅
 > R2-Upload auf echtem Gerät verifiziert (49/49 hochgeladen, Bucket gefüllt,
-> `storage_url` zurücksynchronisiert). Cross-Device-Anzeige im Code gelöst;
-> finaler Zwei-Geräte-Test steht noch aus.
+> `storage_url` zurücksynchronisiert). Zwei-Geräte-Test bestanden und
+> Map-Tiles eingerichtet (2026-06) — P9 damit vollständig abgeschlossen.
 
 **9a — Fotos cross-device verfügbar machen** ✅
 - [x] Upload in den Sync verlegt (Supabase-Metadaten zuerst, dann R2) — **ein**
@@ -131,8 +133,8 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Anzeige nutzt `localUri ?? storageUrl`; `expo-image` cached die R2-URL
       (Memory+Disk) → kein erneuter Download je Render, offline nach 1. Laden
 - [x] Verifikation Upload auf echtem Gerät (49/49 OK)
-- [ ] Zwei-Geräte-Test: Foto auf Gerät B sichtbar (braucht öffentl. R2-Lesezugriff
-      via `R2_PUBLIC_BASE_URL` + neuen Build mit 9a)
+- [x] Zwei-Geräte-Test: Foto auf Gerät B sichtbar ✓ (öffentl. R2-Lesezugriff via
+      `R2_PUBLIC_BASE_URL` + Build mit 9a; Anzeige fällt auf `storage_url` zurück)
 
 **9b — Reale Inbetriebnahme** ✅
 - [x] Supabase-Cloud: Migrations bis 0005 eingespielt
@@ -141,7 +143,217 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
 - [x] Edge Function `r2-presign` deployt (+ CI-Workflow `supabase-functions.yml`)
 - [x] Installierbares APK via Runner-Build (`eas build --local`, Profil preview)
 - [x] Gerätelauf: Picker/EXIF, Auth, Sync, Foto-Upload end-to-end ✓
-- [ ] offen: MapLibre-Tiles (PMTiles), Zwei-Geräte-Test
+- [x] MapLibre-Tiles eingerichtet (Style-URL via env, PMTiles) ✓
+- [x] Zwei-Geräte-Test bestanden ✓ (s. 9a)
+
+### P10 — Tombstone-Sync: Löschungen propagieren auf andere Geräte ✅ (Code) / ⏳ (RLS-Proof via CI)
+> Schließt das erste „Bekannte Limit" der MVP-Sync-Engine: Die SELECT-RLS filtert
+> `deleted_at IS NULL`, daher sah `pullChanges` nie Tombstones — ein Soft-Delete
+> blieb auf allen anderen Geräten liegen. Jetzt gibt es einen eigenen
+> Lösch-Pull-Kanal.
+
+- [x] Migration `0006_tombstone_pull.sql`: RPC `pull_tombstones(since)` —
+      SECURITY DEFINER (umgeht den `deleted_at`-Filter), re-implementiert die
+      Ownership-Checks der Policies selbst (owner/`shared_with` via Trip-Kette);
+      liefert nur `tbl/id/deleted_at/updated_at`, keine Nutzdaten; EXECUTE nur
+      für `authenticated`. Eltern-`deleted_at` wird bewusst NICHT gefiltert
+      (Stop-Tombstone unter gelöschtem Trip muss ankommen).
+- [x] `syncEngine.pullTombstones()`: eigener Wasserstand
+      (`sync:lastTombstonePull`), wendet Löschungen per LWW an
+      (`updated_at < remote` — eine NEUERE lokale Änderung überlebt), unbekannte
+      Zeilen werden übersprungen; läuft in `syncNow` direkt nach `pullChanges`.
+- [x] `src/lib/sync/tombstones.ts` (PURE, RN-frei): Gruppierung +
+      Tabellen-Whitelist (`tbl` landet in SQL → Injection-Schutz) +
+      Wasserstand-Berechnung; Unit-Tests in `__tests__/tombstones.test.ts`.
+- [x] `scripts/rls-test.ts` um 4 Checks erweitert: A zieht eigenen
+      Stop-Tombstone; B sieht A's Tombstones NICHT; `since`-Wasserstand filtert;
+      Trip-Tombstone + Stop-Tombstone unter gelöschtem Trip kommen beide an.
+- [⏳] RLS-Proof läuft in CI (lokal Docker durch Netzwerk-Policy blockiert);
+      Migration 0006 geht beim Merge automatisch via `supabase-migrate.yml` live.
+
+### P11 — R2-Lösch-Lebenszyklus (Garbage Collector) ✅ (Code) / ⏳ (Erstlauf nach Merge)
+> README §7: Soft-Delete tombstoned nur die DB-Zeile — das R2-Objekt bliebe für
+> immer liegen (Kosten + DSGVO-Verstoß). Jetzt räumt ein periodischer GC auf.
+
+- [x] Migration `0007_r2_gc.sql`: RPC `photos_to_purge()` — Fotos mit
+      `storage_url`, deren Zeile **oder** deren Stop/Trip soft-gelöscht ist;
+      SECURITY INVOKER, EXECUTE **nur** für `service_role` (bypasst RLS).
+- [x] Edge Function `r2-gc`: verlangt den `service_role`-Key als Bearer (nicht
+      user-aufrufbar), löscht die R2-Objekte hart (SigV4 DELETE, 404 = schon
+      weg), validiert den Objekt-Key gegen das `user/photo.jpg`-Muster (löscht
+      nie beliebige Keys), tombstoned danach die Foto-Zeile + `storage_url=null`
+      → nächster Lauf überspringt sie, Geräte ziehen die Löschung via
+      `pull_tombstones` (P10) nach. Kaskade gelöst: Foto unter gelöschtem
+      Stop/Trip bekommt sein eigenes `deleted_at` → kein Re-Upload durch Sync.
+- [x] Workflow `r2-gc.yml`: wöchentlicher Cron (Mo 03:23 UTC) + manueller
+      Dispatch; ruft die Funktion mit dem Service-Role-Key auf.
+- [x] Doku: README §7-Checkliste abgehakt, DEVELOPMENT.md (R2-Abschnitt),
+      CLAUDE.md (Ops-Pipelines).
+- [⏳] **Setup nach Merge:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` anlegen
+      (Dashboard → Settings → API); Function deployt `supabase-functions.yml`
+      automatisch, Migration 0007 `supabase-migrate.yml`. Danach Erstlauf
+      manuell via Actions → „R2 garbage collector" und Summary prüfen
+      (`candidates/purged/failures`).
+
+### P12 — Tier-1-Feature: Ver-/Entsorgung als Stopp-Typ ✅
+> README §8.1 Tier 1: Ver-/Entsorgungsstation (Frischwasser, Grau-/Schwarzwasser)
+> als eigener `StopType` — fehlt in generischen Karten-Apps.
+
+- [x] `StopType` um `'verentsorgung'` erweitert (`models.ts`, README §5)
+- [x] Migration `0008_stop_type_verentsorgung.sql`: CHECK-Constraint auf
+      `stops.type` erweitert (SQLite hat keinen CHECK → kein Schema-Bump nötig)
+- [x] UI: Typ-Auswahl im Stopp-Editor, Label in der Stopp-Liste, Typ-Zyklus im
+      Foto-Import — überall Label „Ver-/Entsorgung"
+- [x] Mapper-Roundtrip-Test für den neuen Typ
+
+### P13 — Tier-1-Feature: Strava als Link ✅
+> README §8.1 Tier 1: bewusst **nur ein String-Feld** am Trip (ToS-sicher, keine
+> Strava-API; Vollintegration ist verworfen). Teilen-Link/QR gibt auch private
+> Aktivitäten gezielt frei.
+
+- [x] Migration `0009_trip_strava_url.sql`: `trips.strava_url text`
+- [x] **Lokale SQLite-Migration jetzt additiv** (`SCHEMA_VERSION = 3`):
+      `ADDITIVE_MIGRATIONS` in `schema.ts` + In-Place-Runner in `sqlite.ts`.
+      Vorher hätte jeder Versions-Bump die Tabellen gedroppt — das hätte
+      `photos.local_uri` und noch nicht gepushte Zeilen vernichtet (Re-Pull
+      stellt beides nicht wieder her). Drop-Pfad bleibt nur für < v2.
+- [x] `Trip.stravaUrl` (models/mappers/repositories) + Mapper-Tests
+      (inkl. Abwärtskompatibilität: Zeile ohne `strava_url` → null)
+- [x] `normalizeHttpUrl` (`src/lib/util/url.ts`, PURE): trimmt, ergänzt
+      `https://`, lehnt Nicht-http(s)-Schemes und Freitext ab (Wert landet in
+      `Linking.openURL`) — Unit-Tests in `__tests__/url.test.ts`
+- [x] UI Trip-Screen: Eingabefeld (Speichern bei Blur, Validierungsfehler
+      inline) + „In Strava öffnen"-Button
+
+### P14 — Tier-1-Feature: Wetter pro Stopp ✅
+> README §8.1 Tier 1: Koordinaten liegen vor; **Open-Meteo** ist frei (kein
+> Key/keine Kosten). Wetter ist Deko — best-effort, blockiert nie.
+
+- [x] `src/lib/weather/` (PURE, RN-frei): Datums-Routing (älter als 7 Tage →
+      ERA5-**Archive**-API wegen Nachlauf; letzte Woche bis +16 Tage →
+      **Forecast**-API; weiter weg → null), URL-Bau, Response-Parsing,
+      WMO-Code → Emoji + deutsches Label, Kompakt-Formatierung,
+      `fetchDailyWeather` mit Timeout — liefert bei JEDEM Fehler null
+- [x] Unit-Tests (`__tests__/weather.test.ts`): Routing-Grenzen, URL-Inhalt,
+      Parsing, Formatierung, fetch-Mocks (OK/HTTP-Fehler/offline/out-of-range)
+- [x] UI Stopp-Screen: einzeilige Wetter-Anzeige (Ankunftsdatum, sonst heute)
+      unter dem Ankunftsfeld; nur wenn Koordinaten gesetzt sind
+- [x] `.env.example`: optionale Endpoint-Overrides
+      (`EXPO_PUBLIC_WEATHER_FORECAST_URL` / `_ARCHIVE_URL`)
+
+### P15 — Internes Routenmodell + GPX/KML-Adapter (Architektur-Anker, §8.1) ✅
+> Der §8.1-Anker: jede Importquelle konvertiert über einen Adapter in ein
+> **neutrales Routenmodell** (Stops, Tracks, Zeit), jeder Export entsteht
+> daraus. Deckt Google MyMaps (KML), Komoot/Garmin/OsmAnd/Strava (GPX) ab.
+
+- [x] `src/lib/route-model/` (PURE, RN-frei): `RouteModel { name, stops:
+      RoutePoint[], tracks: RouteTrack[] }` — bewusst NICHT die DB-Form
+      (keine role/position); die Zuordnung passiert erst im Import-Flow
+- [x] GPX-Adapter: `wpt`→Stops, `trk/trkseg`→Track (Segmente eines trk
+      konkateniert), `rte/rtept`→Stops; Export als GPX 1.1; ungültige
+      Koordinaten werden übersprungen
+- [x] KML-Adapter: Placemark/Point→Stop, LineString→Track, Folder/Document
+      rekursiv, MultiGeometry; Export als KML 2.2. **KMZ (gezippt) offen**
+- [x] `detectRouteFormat` (Extension, dann Content-Sniffing) +
+      `parseRouteFile`-Dispatch mit deutschen Fehlermeldungen
+- [x] Dependency: `fast-xml-parser` (pure JS, RN-tauglich, kein DOM nötig)
+- [x] 12 Unit-Tests inkl. Roundtrips (auch XML-Escaping `&`) — grün
+- [x] Folgeschritte: Track-Persistenz (`tracks`-Tabelle) + Karte zeichnet
+      Tracks (P16 ✅), Import-/Export-UI (P17)
+
+### P16 — Track-Persistenz + Karte zeichnet echte Strecken ✅ (Code) / ⏳ (RLS via CI)
+> Tracks = die echte gefahrene Strecke (aus GPX/KML, später Timeline). Damit
+> zeichnet die Karte die reale Route statt Luftlinien; die Diashow-Kamera (§8.1)
+> kann später der Straße folgen.
+
+- [x] Migration `0010_tracks.sql`: Tabelle `tracks` (SyncBase + `trip_id` +
+      `name` + `points` als **JSON-TEXT** — gleiche Spaltenform in beiden DBs,
+      Sync schiebt sie 1:1 ohne Konvertierung) + RLS (gleiche EXISTS-Kette wie
+      Stops) + `pull_tombstones` um `tracks` erweitert
+- [x] Lokal: `CREATE TABLE tracks` in `schema.ts` — **kein** Versions-Bump
+      nötig (CREATE IF NOT EXISTS läuft bei jedem Start)
+- [x] `Track`/`TrackGeoPoint` in models, `rowToTrack`/`trackToRow` (Parse mit
+      []-Fallback), `trackRepo` (listByTrip/create/remove), Sync-`TABLES` +
+      Tombstone-Whitelist um `tracks` erweitert
+- [x] Karte (`RouteMap`): zeichnet Tracks als Linien; Luftlinie nur noch als
+      **gestrichelter Fallback** ohne Tracks; Kamera-Bounds über Stops+Tracks
+- [x] Tests: Track-Mapper-Roundtrip + Fallback, Tombstone-Gruppierung mit
+      `tracks`; RLS-Test +3 Checks (Insert eigene/fremde, fremdes SELECT)
+
+### P17 — GPX/KML-Import & GPX-Export (UI) ✅ (Code) / ⏳ (Gerätelauf)
+> Schließt §8.1 Tier 2 „GPX/KML Import & Export" ab: Datei rein → Vorschau →
+> Stopps+Tracks am Trip; Trip raus als GPX (teilen). KMZ weiterhin offen.
+
+- [x] `trip-convert.ts` (PURE): `stopsFromModel` (hinten anhängen; nur bei
+      leerem Trip wird der erste Punkt `start`; `arrivalDate` aus `time`),
+      `tracksFromModel` (<2 Punkte verworfen), `modelFromTrip` (0/0-Stopps
+      übersprungen) — 5 Unit-Tests
+- [x] UI Trip-Screen, Karte „Import & Export": Datei-Picker (`*/*`, Format
+      entscheidet `parseRouteFile`) → Bestätigungs-Dialog mit Statistik →
+      Anlegen + Sync; Export schreibt GPX in den Cache und öffnet das
+      Teilen-Sheet (`expo-sharing`); Export deaktiviert ohne Geo-Daten
+- [x] Neue Deps: `expo-document-picker`, `expo-sharing` (@56) — **native
+      Module → neuer Dev-Client-/EAS-Build nötig** (wie MapLibre/SQLite)
+- [⏳] Gerätelauf (Picker/Share-Sheet) steht aus — headless nicht testbar
+
+### P18 — Tag-System für Reisen (inkl. Fahrzeug als Tag) ✅
+> Aus „Zukunfts-Features": freie Tags am Trip statt Hierarchie-Ebene (Vorbild
+> Furkot); Fahrzeug ist ein Tag (z. B. „Dethleffs") → Filter „alle Reisen mit
+> dem Dethleffs".
+
+- [x] Migration `0011_trip_tags.sql`: `trips.tags text[] default '{}'`;
+      lokal JSON-TEXT (Muster wie `shared_with`), `SCHEMA_VERSION = 4`
+      (additiver ALTER), Sync-Konvertierung Array↔JSON verallgemeinert
+      (`TRIP_ARRAY_COLS`)
+- [x] `Trip.tags` durch models/mappers (`stringArray`-Helper)/repositories
+- [x] `src/lib/util/tags.ts` (PURE): `parseTagInput` (Komma, trim, dedupe
+      case-insensitiv), `formatTags`, `collectTags` (A–Z), `hasTag` —
+      mit Unit-Tests
+- [x] UI: Tags-Feld im Trip-Screen (Blur-Save); Reise-Liste mit
+      Tag-Chips zum Filtern (Toggle) + Tags auf der Reise-Karte
+
+### P19 — Reise-Diashow / Wiedergabemodus ✅ (Code) / ⏳ (Gerätelauf)
+> README §8.1 Tier 2 (Play-Button): Intro-Karte (Zeitraum, Tage, Stopps, km,
+> Fotos), dann Etappe für Etappe mit Kamera-Flug, progressiv wachsender
+> Routenlinie und Foto-Slides. Spielt **Tracks falls vorhanden, sonst
+> Luftlinie** (entkoppelt von der Quelle, P16). Die Sequenz-Engine wird später
+> vom Reise-Story-Export wiederverwendet.
+
+- [x] `src/lib/slideshow/` (PURE, RN-frei): Haversine/`pathDistanceKm`,
+      `nearestIndex` + `legsForStops` (Stopps auf nächste Trackpunkte gesnappt,
+      Indizes non-decreasing, degenerierte Legs → Luftlinie),
+      `slideDurationMs` (∝ Fotoanzahl, gedeckelt), `buildSlideshow`
+      (Intro-Statistik: Zeitraum/Tage aus arrivalDates, km entlang Track sonst
+      Luftlinie; nur lokalisierte Stopps) — **10 Unit-Tests**
+- [x] `SlideshowPlayer` (+ Web-Stub): Vollbild-Karte, Kamera-`fly` pro Etappe,
+      wachsende Linie (Legs bis zur aktuellen Folie), Foto-Zyklus pro Stopp
+      (`expo-image`), Tap-Zonen zurück/Pause/vor, Fortschritt + Schließen
+- [x] Screen `/play?tripId=…` (Header aus) + „▶️ Reise abspielen"-Button im
+      Trip-Screen (deaktiviert ohne lokalisierte Stopps)
+- [⏳] Gerätelauf (Kamera-Animation/Performance) steht aus
+
+### P20 — CI-Fix: explizite Tabellen-GRANTs (Migration `0012`) ✅
+> RLS-Job in CI rot mit „permission denied for table trips" — **vor** jeder
+> RLS-Prüfung. Ursache: Der Runner zieht die Supabase-CLI mit `version:
+> latest`; neuere lokale Stacks legen Migrations-Tabellen nicht mehr mit den
+> alten Default-Privilegien (`GRANT ALL … TO authenticated`) an. `main` war
+> aus demselben Grund bereits rot (Run 80, 2026-06-10, vor diesem Branch).
+
+- [x] Migration `0012_grants.sql`: minimale explizite GRANTs —
+      `authenticated`: SELECT/INSERT/UPDATE (bewusst **kein** DELETE =
+      Soft-Delete-Prinzip §5.4), `service_role`: alles, `anon`: nichts auf
+      Datentabellen; `alter default privileges` für künftige Tabellen.
+      Idempotent (auf alten Stacks No-op), geht via `supabase db push` auch
+      in die Cloud (dort harmlos).
+- [x] **Nachfix (Migration `0013`):** Nach 0012 waren 13/15 Checks grün, aber
+      die SECURITY-DEFINER-RPC `pull_tombstones` lieferte 0 Zeilen — neuere
+      Stacks garantieren den RLS-Bypass des Funktions-Owners nicht mehr.
+      Tombstones sind jetzt **first-class unter RLS**: je Tabelle eine
+      zusätzliche SELECT-Policy „eigene gelöschte Zeilen" (Eltern-Guards
+      bewusst weggelassen), RPC auf **SECURITY INVOKER** umgestellt (liest im
+      Aufrufer-Kontext — der Pfad, den die grünen Checks beweisen). Bonus:
+      auch der normale Pull sieht Löschungen jetzt mit. RLS-Test prüft die
+      Soft-Delete-Vorbedingungen jetzt explizit (+2 Checks).
 
 ---
 
@@ -170,18 +382,28 @@ Modell: `User → viele Trips → Stops → Photos` (2-stufig, ohne `routes`).
 ---
 
 ## Stand
-MVP-Code (P0–P7) + Datenmodell-Vereinfachung (P8) umgesetzt. Headless verifiziert:
-`npm run typecheck`, `npm test` (71 Tests), `npm run lint` — alle grün.
-RLS-Isolationsbeweis läuft in CI (lokal Docker durch Netzwerk-Policy blockiert).
+**MVP abgeschlossen (P0–P9, Stand 2026-06).** Alle MVP-Reste erledigt:
+Zwei-Geräte-Test bestanden (Foto auf Gerät B via `storage_url`/R2 sichtbar),
+MapLibre-Tiles eingerichtet, Migrations bis 0005 im Cloud-Projekt eingespielt,
+Edge Function `r2-presign` deployt, App läuft auf echten Geräten end-to-end
+(Auth, CRUD, Foto-Import → Routenvorschlag, R2-Upload, Karte).
+Headless verifiziert: `npm run typecheck`, `npm test`, `npm run lint` — alle grün;
+RLS-Isolationsbeweis läuft in CI.
 Sync-Engine gehärtet (P7): JWT-Diagnose, INSERT-first-Strategie, per-Row-Fallback,
 Tombstone-RLS-Fix, globales Crash-Logging.
 P8: Modell auf 2-stufig (`Trip → Stop → Photo`), `roadbooks`/`routes` → `trips`,
 Migration `0005`, lokaler SQLite-Schema-Reset (PRAGMA user_version = 2).
-**Offen für echten Betrieb (außerhalb dieser Umgebung):** Supabase-Cloud/EAS-Build,
-R2-Bucket + Secrets, Gerätelauf (Picker/EXIF/MapLibre), Map-Tiles (PMTiles).
-**Migrations 0003 + 0004** sind im Cloud-Projekt bereits eingespielt. Migration
-**0005** (P8) muss noch via `supabase db push` (oder SQL-Editor) eingespielt werden
-— danach ist 0004 obsolet (Route-Policies entfallen).
+**Post-MVP umgesetzt:** P10 Tombstone-Sync (Lösch-Propagation auf andere Geräte,
+Migration `0006`) + P11 R2-Lösch-Lebenszyklus (GC: Edge Function `r2-gc` +
+Migration `0007` + Cron `r2-gc.yml`).
+**Nächste Schritte:** Repo-Secret `SUPABASE_SERVICE_ROLE_KEY` setzen + GC-Erstlauf
+(s. P11), danach Feature-Backlog (README §8.1) der Reihe nach: ✅ P12
+Ver-/Entsorgungs-Stopp-Typ → ✅ P13 Strava-Link → ✅ P14 Wetter pro Stopp →
+✅ P15 internes Routenmodell + GPX/KML-Adapter → ✅ P16 Track-Persistenz + Karte →
+✅ P17 Import-/Export-UI → ✅ P18 Tags → ✅ P19 Reise-Diashow.
+**Damit ist die geplante Feature-Reihe komplett.** Offen (Gerät): Dev-Client-
+Build wegen neuer nativer Module (expo-document-picker/-sharing), Gerätelauf von
+Import/Export und Diashow; Cloud: Migrations 0006–0011 via `supabase db push`.
 
 ---
 
@@ -191,30 +413,22 @@ Payment/Abo · Sharing-UI · Store-Submission · DSGVO-Volltexte · volle Sync-E
 bereits vorbereitet.
 
 ## Zukunfts-Features (nach P8/P9)
-- **Tag-System für Reisen** (Backlog, nicht sofort): freie Tags an einem **Trip**,
-  inkl. **Fahrzeug** als Tag (z.B. „Dethleffs“, „Sunlight“) → Filter „alle Reisen
-  mit dem Dethleffs“. Vorbild Furkot (Tags statt Hierarchie). Ersetzt die früher
-  angedachte Fahrzeug-Ebene.
-- **Reise-Diashow / Wiedergabemodus** (Play-Button, README §8.1 Tier 2): Reise in
-  der App abspielen — Intro-Karte (Zeitraum, Tage, Stopps, km, Länder), dann Etappe
-  für Etappe mit Karten-Kamerafahrt (`flyTo`/`fitBounds`), progressiv wachsender
-  Routenlinie und Foto-Slides. Sequenz-Logik RN-frei in `src/lib/` (Jest-testbar);
-  Player-UI + Animation obendrauf. **Setzt auf Track-Geometrie auf:** Karte zeichnet
-  heute nur **Luftlinien** zwischen Stopps (`MapView.tsx`, `lineCoords`) → mit
-  **Tracks** aus GPX-/Google-Timeline-Import (internes Routenmodell, §8.1-Anker)
-  folgt die Linie der echten Strecke; Fallback bleibt Luftlinie. **Teilt die
-  Sequenz-Engine mit dem Reise-Story-Export** (In-App zuerst, MP4/Web-Link-Export
-  als Aufsatz).
+- ✅ **Tag-System für Reisen** — umgesetzt in P18 (Migration `0011`, Tag-Chips
+  in der Reise-Liste; Fahrzeug als Tag statt Hierarchie-Ebene, Vorbild Furkot).
+- ✅ **Reise-Diashow / Wiedergabemodus** — umgesetzt in P19 (Sequenz-Engine
+  RN-frei in `src/lib/slideshow/`, Player mit Kamera-Flug + wachsender Linie +
+  Foto-Slides; Tracks falls vorhanden, sonst Luftlinie). Der **Reise-Story-
+  Export** (MP4/Web-Link) bleibt offen und nutzt dieselbe Sequenz-Engine.
 
 ## Bekannte Limits der MVP-Sync-Engine
-- **Löschungen propagieren nicht per Pull auf bereits synchronisierte Geräte.**
-  Die SELECT-RLS filtert `deleted_at IS NULL` (`0002_rls.sql`), also liefert
-  `pullChanges` **keine Tombstones**. Folge: Ein Soft-Delete wird nur vom
-  *löschenden* Gerät hochgepusht; andere Geräte, die die Zeile schon lokal haben,
-  erfahren nichts und behalten sie. Aufräumen daher **immer in der App auf dem
-  Gerät, das die Zeile sieht** — nicht direkt in der Cloud (sonst bleibt die
-  lokale Kopie hängen). Echte Lösung gehört in die Post-MVP-Sync-Engine
-  (Tombstone-Sichtbarkeit / eigener „deleted“-Pull-Kanal mit `since`-Filter).
+- ✅ **GELÖST (P10, Migration `0006`): Löschungen propagieren jetzt auch per Pull.**
+  Früher: Die SELECT-RLS filtert `deleted_at IS NULL`, also lieferte
+  `pullChanges` keine Tombstones — ein Soft-Delete blieb auf anderen Geräten
+  liegen. Jetzt zieht `syncEngine.pullTombstones()` Löschungen über die RPC
+  `pull_tombstones` (eigener Kanal mit `since`-Wasserstand) und wendet sie per
+  Last-write-wins lokal an. Damit ist auch das Aufräumen **direkt in der Cloud**
+  (SQL-Editor: `deleted_at` setzen) zulässig — die Geräte ziehen die Löschung
+  beim nächsten Sync nach.
 - **Dubletten entstehen nicht durch Doppel-Sync** (alles dedupt über die
   Client-UUID via `ON CONFLICT(id)`), sondern wenn dieselbe Reise unter **zwei
   UUIDs** angelegt/gepusht wurde (z. B. Reinstall + Neuanlage in der Testphase).

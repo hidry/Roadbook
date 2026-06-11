@@ -28,22 +28,35 @@ on PR branches) + `workflow_dispatch`. To save runner minutes: each has a
 (paths-filter) job that gates the heavy work on PRs — the E2E jobs skip when no
 app/native files changed, and `ci.yml`'s Supabase RLS job skips when no DB code
 changed (a skipped job reports "passing", so required checks aren't blocked).
-Plus two ops pipelines: `supabase-migrate.yml`
-(`supabase db push` of the cloud migrations) and two manual (`workflow_dispatch`)
-Android build pipelines: `eas-build-android.yml` (CLOUD EAS build — uses the
-limited free build quota) and `eas-build-android-runner.yml` (compiles on the
-GitHub runner via `eas build --local` — installable APK artifact, NO cloud
-quota). See DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green.
+Plus ops pipelines: `supabase-migrate.yml`
+(`supabase db push` of the cloud migrations), `supabase-functions.yml` (deploys
+Edge Functions), `r2-gc.yml` (weekly cron: hard-deletes R2 objects of
+soft-deleted photos via the `r2-gc` Edge Function) and two manual
+(`workflow_dispatch`) Android build pipelines: `eas-build-android.yml` (CLOUD
+EAS build — uses the limited free build quota) and
+`eas-build-android-runner.yml` (compiles on the GitHub runner via
+`eas build --local` — installable APK artifact, NO cloud quota). See
+DEVELOPMENT.md "Tests & CI" / "Aufs Gerät bringen". Keep them green.
+
+## Workflow
+- **One commit per completed task.** Every finished task/phase gets its own
+  commit — code AND its documentation updates (PROGRESS.md etc.) together.
+  Never bundle several tasks into one commit; never split one task's code and
+  docs across commits. Push after the task is committed.
 
 ## Architecture & conventions
 - **Offline-first**: every write goes to local SQLite FIRST (the on-device
   Source of Truth); the sync engine (`src/lib/sync/`) pushes to Supabase later.
-  Don't write straight to Supabase from the UI.
-- **Data model** (`src/types/models.ts`): `User → Trips → Stops → Photos`.
-  "Roadbook" is the **app name**, not a table; the top-level entity is a **`Trip`**
-  (UI label: "Reise"). Stops reference their trip directly — there is **no** `routes`
-  table (removed in migration `0005`; the "route" you see in `suggestion.ts`/
-  `RouteMap` is the drawn path, not a DB entity).
+  Don't write straight to Supabase from the UI. Deletions reach other devices
+  via the `pull_tombstones` RPC (migration `0006`) — the regular pull can't see
+  them because SELECT-RLS filters `deleted_at IS NULL`.
+- **Data model** (`src/types/models.ts`): `User → Trips → Stops → Photos`, plus
+  `Tracks` per trip (the real driven path from GPX/KML import, migration `0010`;
+  points = JSON text column). "Roadbook" is the **app name**, not a table; the
+  top-level entity is a **`Trip`** (UI label: "Reise"). Stops reference their
+  trip directly — there is **no** `routes` table (removed in migration `0005`;
+  the "route" you see in `suggestion.ts`/`RouteMap` is the drawn path, not a DB
+  entity).
 - **All tables extend `SyncBase`** (`src/types/models.ts`): client-generated UUID
   PK (never serial), `createdAt`/`updatedAt`, `deletedAt`. **"Delete" = soft-delete**
   (set `deletedAt`); no hard DELETE in normal flow.

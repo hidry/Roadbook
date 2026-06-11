@@ -185,6 +185,16 @@ Bilder gehen **nie** in Supabase Storage, sondern nach R2 (kein Egress, README �
 Die App holt pro Foto eine signierte PUT-URL (`${user.id}/${photoId}.jpg`) und lädt
 das komprimierte JPEG direkt zu R2.
 
+**Lösch-Lebenszyklus (Garbage Collector):** Soft-Delete tombstoned nur die DB-Zeile —
+das Binary bliebe sonst für immer in R2 (Kosten + DSGVO, README §7). Der Workflow
+`r2-gc.yml` (wöchentlich + manuell) ruft die Edge Function **`r2-gc`** auf: sie listet
+über die RPC `photos_to_purge()` (Migration `0007`) alle Fotos, deren Zeile **oder**
+deren Stop/Trip soft-gelöscht ist und die noch eine `storage_url` haben, löscht die
+R2-Objekte **hart** und tombstoned die Foto-Zeilen (Geräte ziehen die Löschung via
+`pull_tombstones` nach). Die Funktion ist **nicht user-aufrufbar** — sie verlangt den
+`service_role`-Key als Bearer. Benötigtes zusätzliches Repo-Secret:
+`SUPABASE_SERVICE_ROLE_KEY` (Dashboard → Settings → API).
+
 ## Karten-Tiles
 `EXPO_PUBLIC_MAP_STYLE_URL` setzen. Produktion: selbst-gehostete
 **Protomaps/PMTiles auf R2** (README §3) — **nicht** `tile.openstreetmap.org`

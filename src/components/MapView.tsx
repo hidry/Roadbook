@@ -13,7 +13,7 @@ import { Camera, GeoJSONSource, Layer, Map, Marker } from '@maplibre/maplibre-re
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import type { Stop } from '@/types/models';
+import type { Stop, Track } from '@/types/models';
 
 const BLANK_STYLE: StyleSpecification = {
   version: 8,
@@ -26,14 +26,14 @@ const mapStyle: string | StyleSpecification = styleUrl && styleUrl.length > 0 ? 
 
 const MAP_PADDING = { top: 50, right: 50, bottom: 50, left: 50 };
 
-/** [west, south, east, north] bounding box for a set of stops. */
-function boundsOf(stops: Stop[]): [number, number, number, number] {
-  const lngs = stops.map((s) => s.lng);
-  const lats = stops.map((s) => s.lat);
+/** [west, south, east, north] bounding box over [lng, lat] coordinates. */
+function boundsOf(coords: [number, number][]): [number, number, number, number] {
+  const lngs = coords.map(([lng]) => lng);
+  const lats = coords.map(([, lat]) => lat);
   return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
 }
 
-export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
+export function RouteMap({ stops, tracks = [], style }: { stops: Stop[]; tracks?: Track[]; style?: object }) {
   // Web has no MapLibre native view; show a neutral placeholder instead.
   if (Platform.OS === 'web') {
     return (
@@ -44,20 +44,39 @@ export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
   }
 
   const ordered = [...stops].sort((a, b) => a.position - b.position);
-  const lineCoords = ordered.map((s) => [s.lng, s.lat]);
+  const lineCoords = ordered.map((s) => [s.lng, s.lat] as [number, number]);
+  // Tracks are the REAL driven path (README §8.1): when present they replace
+  // the straight stop-connector line; the air line stays as the fallback.
+  const trackLines = tracks
+    .map((t) => t.points.map((p) => [p.lng, p.lat] as [number, number]))
+    .filter((coords) => coords.length >= 2);
+  const allCoords = [...lineCoords, ...trackLines.flat()];
 
   return (
     <View style={[styles.container, style]}>
       <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle}>
-        {stops.length >= 2 ? (
-          <Camera bounds={boundsOf(ordered)} padding={MAP_PADDING} />
-        ) : stops.length === 1 ? (
-          <Camera zoom={10} center={[stops[0].lng, stops[0].lat]} />
+        {allCoords.length >= 2 ? (
+          <Camera bounds={boundsOf(allCoords)} padding={MAP_PADDING} />
+        ) : allCoords.length === 1 ? (
+          <Camera zoom={10} center={allCoords[0]} />
         ) : (
           <Camera zoom={3} center={[10.0, 51.0]} />
         )}
 
-        {lineCoords.length >= 2 ? (
+        {trackLines.length > 0 ? (
+          <GeoJSONSource
+            id="track-lines"
+            data={{
+              type: 'FeatureCollection',
+              features: trackLines.map((coords) => ({
+                type: 'Feature' as const,
+                properties: {},
+                geometry: { type: 'LineString' as const, coordinates: coords },
+              })),
+            }}>
+            <Layer id="track-lines-layer" type="line" paint={{ 'line-color': '#208AEF', 'line-width': 3 }} />
+          </GeoJSONSource>
+        ) : lineCoords.length >= 2 ? (
           <GeoJSONSource
             id="route-line"
             data={{
@@ -65,7 +84,11 @@ export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
               properties: {},
               geometry: { type: 'LineString', coordinates: lineCoords },
             }}>
-            <Layer id="route-line-layer" type="line" paint={{ 'line-color': '#208AEF', 'line-width': 3 }} />
+            <Layer
+              id="route-line-layer"
+              type="line"
+              paint={{ 'line-color': '#208AEF', 'line-width': 3, 'line-dasharray': [2, 2] }}
+            />
           </GeoJSONSource>
         ) : null}
 

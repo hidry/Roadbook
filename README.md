@@ -109,7 +109,7 @@ Ein **zentrales Backend für alle User** der App. Trennung der Verantwortlichkei
 > **Konvention:** DB-Spalten in `snake_case` (z. B. `owner_id`, `updated_at`), TS-Felder in `camelCase`. Mapping im DB-Client. Alle Tabellen erben die Offline-/Sync-Felder aus `SyncBase` (s. §5.4).
 
 ```typescript
-type StopType = 'campingplatz' | 'stellplatz' | 'freistehend';
+type StopType = 'campingplatz' | 'stellplatz' | 'freistehend' | 'verentsorgung';
 type StopRole = 'start' | 'stop' | 'end';
 
 // Gemeinsame Basis ALLER Tabellen — Definition + Begründung in §5.4
@@ -354,7 +354,7 @@ Beim Verkauf wirst du datenschutzrechtlich **Verantwortlicher** für fremde Nutz
 - [ ] EU-Datenresidenz wählen (Supabase Region: `eu-central-1` / Frankfurt)
 - [ ] Lösch- & Auskunfts-/Exportfunktion in der App (Betroffenenrechte)
 - [ ] **In-App-Account-Löschung** (Apple-Pflicht für Apps mit Account-Erstellung) + DSGVO-Recht auf Löschung
-- [ ] **R2-Lösch-Lebenszyklus:** Beim Löschen eines Fotos/Stops muss das zugehörige R2-Objekt **echt** gelöscht werden (nicht nur DB-Soft-Delete). Sonst verwaiste Objekte = Kosten **und** DSGVO-Verstoß (Daten nicht wirklich gelöscht). Mechanismus: Edge Function bei Löschung oder periodischer Garbage-Collector. **Achtung:** Soft-Delete (§5.4) ≠ DSGVO-Löschung — der echte Hard-Delete (DB-Row + R2-Objekt, über alle Geräte) muss separat implementiert werden.
+- [x] **R2-Lösch-Lebenszyklus:** Beim Löschen eines Fotos/Stops muss das zugehörige R2-Objekt **echt** gelöscht werden (nicht nur DB-Soft-Delete). Sonst verwaiste Objekte = Kosten **und** DSGVO-Verstoß (Daten nicht wirklich gelöscht). **Umgesetzt** als periodischer Garbage-Collector: Edge Function `r2-gc` (+ RPC `photos_to_purge()`, Migration `0007`) löscht R2-Objekte soft-gelöschter Fotos/Stops/Trips hart und tombstoned die Foto-Zeilen; wöchentlicher Cron via `r2-gc.yml`. **Achtung:** Soft-Delete (§5.4) ≠ DSGVO-Löschung — der DB-Row-Hard-Delete (Account-Löschung) ist weiterhin ein separater Flow.
 - [ ] Daten verschlüsselt at-rest; nur extrahierte Koordinaten + komprimierte Bilder speichern, **nicht** das EXIF-volle Original
 - [ ] **Importquellen mit Rohdaten** (z. B. Google-Timeline-JSON, §8.1): nur die für die Reise relevanten Stopps/Route übernehmen, Roh-Dump (vollständiges Bewegungsprofil) **nie** in die Cloud laden — direkt auf dem Gerät verwerfen
 - [ ] Apple App Store: Developer-Account (99 $/Jahr), Permission-Begründung für Foto/Standort

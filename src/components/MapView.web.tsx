@@ -8,13 +8,15 @@
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import type { Stop } from '@/types/models';
+import type { Stop, Track } from '@/types/models';
 
-export function RouteMap({ stops, style }: { stops: Stop[]; style?: object }) {
+export function RouteMap({ stops, tracks = [], style }: { stops: Stop[]; tracks?: Track[]; style?: object }) {
   return (
     <View style={[styles.placeholder, style]} testID="route-map-web">
       <ThemedText type="small">Karte ist auf dem Gerät (iOS/Android) verfügbar.</ThemedText>
-      <ThemedText type="small">{stops.length} Stopp(s) mit Koordinaten</ThemedText>
+      <ThemedText type="small">
+        {stops.length} Stopp(s) mit Koordinaten{tracks.length > 0 ? ` · ${tracks.length} Track(s)` : ''}
+      </ThemedText>
     </View>
   );
 }

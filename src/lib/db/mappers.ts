@@ -5,7 +5,7 @@
  * The same shape is used for both SQLite rows and Supabase rows, since the
  * column names are identical by design.
  */
-import type { Photo, Stop, StopRole, StopType, Trip, UploadStatus } from '@/types/models';
+import type { Photo, Stop, StopRole, StopType, Track, TrackGeoPoint, Trip, UploadStatus } from '@/types/models';
 
 /** A raw DB row: string keys, primitive values (SQLite gives numbers/strings/null). */
 export type Row = Record<string, string | number | null>;
@@ -35,19 +35,25 @@ function baseFields(r: Row) {
 }
 
 // ── Trip ──────────────────────────────────────────────────────────────────────
-export function rowToTrip(r: Row): Trip {
-  let sharedWith: string[] = [];
+/** Parses a JSON-text string-array column; anything broken becomes []. */
+function stringArray(v: string | number | null): string[] {
   try {
-    sharedWith = r.shared_with ? (JSON.parse(String(r.shared_with)) as string[]) : [];
+    const parsed: unknown = v ? JSON.parse(String(v)) : [];
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
   } catch {
-    sharedWith = [];
+    return [];
   }
+}
+
+export function rowToTrip(r: Row): Trip {
   return {
     ...baseFields(r),
     ownerId: str(r.owner_id),
-    sharedWith,
+    sharedWith: stringArray(r.shared_with),
     name: str(r.name),
     startDate: strOrNull(r.start_date),
+    stravaUrl: strOrNull(r.strava_url),
+    tags: stringArray(r.tags),
   };
 }
 
@@ -58,6 +64,8 @@ export function tripToRow(m: Trip): Row {
     shared_with: JSON.stringify(m.sharedWith ?? []),
     name: m.name,
     start_date: m.startDate,
+    strava_url: m.stravaUrl,
+    tags: JSON.stringify(m.tags ?? []),
   };
 }
 
@@ -116,5 +124,31 @@ export function photoToRow(m: Photo): Row {
     taken_at: m.takenAt,
     lat: m.lat,
     lng: m.lng,
+  };
+}
+
+// ── Track ─────────────────────────────────────────────────────────────────────
+export function rowToTrack(r: Row): Track {
+  let points: TrackGeoPoint[] = [];
+  try {
+    const parsed: unknown = r.points ? JSON.parse(String(r.points)) : [];
+    if (Array.isArray(parsed)) points = parsed as TrackGeoPoint[];
+  } catch {
+    points = [];
+  }
+  return {
+    ...baseFields(r),
+    tripId: str(r.trip_id),
+    name: strOrNull(r.name),
+    points,
+  };
+}
+
+export function trackToRow(m: Track): Row {
+  return {
+    ...baseRow(m),
+    trip_id: m.tripId,
+    name: m.name,
+    points: JSON.stringify(m.points ?? []),
   };
 }

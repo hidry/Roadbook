@@ -22,12 +22,13 @@ import type { StopType } from '@/types/models';
 
 type Phase = 'idle' | 'reading' | 'geocoding' | 'review' | 'saving';
 
-const TYPE_CYCLE: (StopType | null)[] = [null, 'campingplatz', 'stellplatz', 'freistehend'];
+const TYPE_CYCLE: (StopType | null)[] = [null, 'campingplatz', 'stellplatz', 'freistehend', 'verentsorgung'];
 const TYPE_LABEL: Record<string, string> = {
   null: 'Typ wählen',
   campingplatz: 'Campingplatz',
   stellplatz: 'Stellplatz',
   freistehend: 'Freistehend',
+  verentsorgung: 'Ver-/Entsorgung',
 };
 
 export default function ImportScreen() {

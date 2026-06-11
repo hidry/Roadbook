@@ -10,7 +10,7 @@
  *   change later (that would be an expensive data migration).
  */
 
-export type StopType = 'campingplatz' | 'stellplatz' | 'freistehend';
+export type StopType = 'campingplatz' | 'stellplatz' | 'freistehend' | 'verentsorgung';
 export type StopRole = 'start' | 'stop' | 'end';
 export type UploadStatus = 'pending' | 'uploaded' | 'failed';
 
@@ -30,6 +30,11 @@ export interface Trip extends SyncBase {
   sharedWith: string[]; // additional user ids (RLS-checked); Sharing-UI is Post-MVP
   name: string;
   startDate: string | null;
+  /** Strava share link (plain string — no API integration by design, README §8.1). */
+  stravaUrl: string | null;
+  /** Free-form tags incl. the vehicle (e.g. "Dethleffs") — grouping runs via
+   *  tags, not via a parent container (PROGRESS "Begriffe & Datenmodell"). */
+  tags: string[];
 }
 
 export interface Stop extends SyncBase {
@@ -55,5 +60,25 @@ export interface Photo extends SyncBase {
   lng: number | null;
 }
 
+/** One vertex of a track (same shape as the route-model TrackPoint). */
+export interface TrackGeoPoint {
+  lat: number;
+  lng: number;
+  time: string | null; // ISO 8601 when the source carries one
+  ele: number | null; // metres
+}
+
+/**
+ * The real driven path of a trip (imported via GPX/KML, README §8.1). With
+ * tracks the map draws the actual route instead of straight lines between
+ * stops. Points live as a JSON text column (`points`) in both DBs; mappers.ts
+ * parses/serialises.
+ */
+export interface Track extends SyncBase {
+  tripId: string;
+  name: string | null;
+  points: TrackGeoPoint[];
+}
+
 /** The synced entity kinds, used by the generic sync engine. */
-export type EntityType = 'trips' | 'stops' | 'photos';
+export type EntityType = 'trips' | 'stops' | 'photos' | 'tracks';

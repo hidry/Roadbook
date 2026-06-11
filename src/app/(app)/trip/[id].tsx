@@ -1,21 +1,35 @@
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from 'react-native-draggable-flatlist';
+import * as DocumentPicker from 'expo-document-picker';
+import { cacheDirectory, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RouteMap } from '@/components/MapView';
 import { ThemedText } from '@/components/themed-text';
-import { Button, Card, Screen, TextField } from '@/components/ui';
+import { Button, Card, ErrorText, Screen, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { stopRepo, tripRepo } from '@/lib/db/repositories';
+import { stopRepo, trackRepo, tripRepo } from '@/lib/db/repositories';
+import {
+  modelFromTrip,
+  parseRouteFile,
+  routeModelStats,
+  stopsFromModel,
+  toGpx,
+  tracksFromModel,
+} from '@/lib/route-model';
 import { syncNow } from '@/lib/sync/syncEngine';
-import type { Stop, StopType, Trip } from '@/types/models';
+import { formatTags, parseTagInput } from '@/lib/util/tags';
+import { normalizeHttpUrl } from '@/lib/util/url';
+import type { Stop, StopType, Track, Trip } from '@/types/models';
 
 const TYPE_LABEL: Record<StopType, string> = {
   campingplatz: 'Campingplatz',
   stellplatz: 'Stellplatz',
   freistehend: 'Freistehend',
+  verentsorgung: 'Ver-/Entsorgung',
 };
 
 function syncAfterWrite() {
@@ -29,14 +43,23 @@ export default function TripScreen() {
 
   const [trip, setTrip] = useState<Trip | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [name, setName] = useState('');
   const [tripName, setTripName] = useState('');
+  const [stravaInput, setStravaInput] = useState('');
+  const [stravaError, setStravaError] = useState<string | null>(null);
+  const [tagsInput, setTagsInput] = useState('');
 
   const load = useCallback(async () => {
     const t = await tripRepo.get(id);
     setTrip(t);
-    if (t) setTripName(t.name);
+    if (t) {
+      setTripName(t.name);
+      setStravaInput(t.stravaUrl ?? '');
+      setTagsInput(formatTags(t.tags));
+    }
     setStops(await stopRepo.listByTrip(id));
+    setTracks(await trackRepo.listByTrip(id));
   }, [id]);
 
   useFocusEffect(
@@ -77,6 +100,89 @@ export default function TripScreen() {
     await tripRepo.rename(id, trimmed);
     setTrip((t) => (t ? { ...t, name: trimmed } : t));
     syncAfterWrite();
+  }
+
+  async function saveTags() {
+    const tags = parseTagInput(tagsInput);
+    if (JSON.stringify(tags) === JSON.stringify(trip?.tags ?? [])) return;
+    await tripRepo.update(id, { tags });
+    setTrip((t) => (t ? { ...t, tags } : t));
+    setTagsInput(formatTags(tags));
+    syncAfterWrite();
+  }
+
+  async function saveStravaUrl() {
+    setStravaError(null);
+    const normalized = normalizeHttpUrl(stravaInput);
+    if (stravaInput.trim() && !normalized) {
+      setStravaError('Kein gültiger Link (z. B. https://strava.com/activities/…).');
+      return;
+    }
+    if (normalized === (trip?.stravaUrl ?? null)) return;
+    await tripRepo.update(id, { stravaUrl: normalized });
+    setTrip((t) => (t ? { ...t, stravaUrl: normalized } : t));
+    setStravaInput(normalized ?? '');
+    syncAfterWrite();
+  }
+
+  async function importRouteFile() {
+    const res = await DocumentPicker.getDocumentAsync({
+      // GPX/KML have no reliable registered MIME type across pickers — accept
+      // everything and let parseRouteFile decide (extension + content sniff).
+      type: '*/*',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const asset = res.assets[0];
+    try {
+      const content = await readAsStringAsync(asset.uri);
+      const model = parseRouteFile(asset.name ?? 'datei.xml', content);
+      const stats = routeModelStats(model);
+      if (stats.stops === 0 && stats.trackPoints === 0) {
+        Alert.alert('Import', 'Die Datei enthält keine Stopps oder Tracks.');
+        return;
+      }
+      Alert.alert(
+        'Route importieren?',
+        `${asset.name}\n${stats.stops} Stopp(s), ${stats.tracks} Track(s) mit ${stats.trackPoints} Punkten`,
+        [
+          { text: 'Abbrechen', style: 'cancel' },
+          {
+            text: 'Importieren',
+            onPress: async () => {
+              for (const s of stopsFromModel(model, stops.length)) {
+                await stopRepo.create({ tripId: id, ...s });
+              }
+              for (const t of tracksFromModel(model)) {
+                await trackRepo.create({ tripId: id, ...t });
+              }
+              await load();
+              syncAfterWrite();
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      Alert.alert('Import fehlgeschlagen', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function exportGpx() {
+    if (!trip) return;
+    try {
+      const gpx = toGpx(modelFromTrip(trip.name, stops, tracks));
+      const fileName = `${trip.name.replace(/[^\wäöüÄÖÜß-]+/g, '_') || 'reise'}.gpx`;
+      const uri = `${cacheDirectory}${fileName}`;
+      await writeAsStringAsync(uri, gpx);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/gpx+xml', dialogTitle: 'Reise als GPX teilen' });
+      } else {
+        Alert.alert('Export', `GPX gespeichert unter:\n${uri}`);
+      }
+    } catch (e) {
+      Alert.alert('Export fehlgeschlagen', e instanceof Error ? e.message : String(e));
+    }
   }
 
   async function handleDragEnd({ data }: { data: Stop[] }) {
@@ -123,7 +229,7 @@ export default function TripScreen() {
   const ListHeader = (
     <>
       <Stack.Screen options={{ title: trip?.name ?? 'Reise' }} />
-      <RouteMap stops={located} />
+      <RouteMap stops={located} tracks={tracks} />
       <Card style={styles.headerCard}>
         <TextField
           label="Reisetitel"
@@ -133,6 +239,31 @@ export default function TripScreen() {
           placeholder="Titel der Reise"
         />
         {trip?.startDate ? <ThemedText type="small">Start: {trip.startDate}</ThemedText> : null}
+        <TextField
+          label="Tags (Komma-getrennt, z. B. Dethleffs, Sommer)"
+          value={tagsInput}
+          onChangeText={setTagsInput}
+          onBlur={saveTags}
+          placeholder="Dethleffs, Sommer"
+          autoCapitalize="none"
+        />
+        <TextField
+          label="Strava-Link (optional)"
+          value={stravaInput}
+          onChangeText={setStravaInput}
+          onBlur={saveStravaUrl}
+          placeholder="https://strava.com/activities/…"
+          autoCapitalize="none"
+          keyboardType="url"
+        />
+        <ErrorText>{stravaError}</ErrorText>
+        {trip?.stravaUrl ? (
+          <Button
+            title="In Strava öffnen"
+            variant="secondary"
+            onPress={() => Linking.openURL(trip.stravaUrl!).catch(() => {})}
+          />
+        ) : null}
       </Card>
       <Card style={styles.headerCard}>
         <ThemedText type="smallBold">Stopp hinzufügen</ThemedText>
@@ -142,6 +273,22 @@ export default function TripScreen() {
           title="📷 Stopps aus Fotos vorschlagen"
           variant="secondary"
           onPress={() => router.push({ pathname: '/import', params: { tripId: id } })}
+        />
+      </Card>
+      <Card style={styles.headerCard}>
+        <Button
+          title="▶️ Reise abspielen"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/play', params: { tripId: id } })}
+          disabled={located.length === 0}
+        />
+        <ThemedText type="smallBold">Import & Export</ThemedText>
+        <Button title="🗺 GPX/KML importieren" variant="secondary" onPress={importRouteFile} />
+        <Button
+          title="📤 Als GPX exportieren"
+          variant="secondary"
+          onPress={exportGpx}
+          disabled={stops.every((s) => s.lat === 0 && s.lng === 0) && tracks.length === 0}
         />
       </Card>
     </>

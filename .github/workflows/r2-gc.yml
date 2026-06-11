@@ -1,0 +1,34 @@
+name: R2 garbage collector
+
+# Hard-deletes R2 objects of soft-deleted photos/stops/trips (README §7:
+# deletion lifecycle — orphaned objects are storage cost AND a DSGVO violation).
+# Invokes the `r2-gc` Edge Function, which lists candidates via the
+# `photos_to_purge()` RPC (migration 0007), DELETEs the objects from R2 and
+# tombstones the photo rows.
+#
+# Triggers: weekly cron + manual dispatch. The function is operator-only — it
+# requires the service-role key as Bearer token, so it needs the
+# SUPABASE_SERVICE_ROLE_KEY repo secret (in addition to SUPABASE_PROJECT_REF).
+on:
+  schedule:
+    - cron: '23 3 * * 1' # Mondays 03:23 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Never let two GC runs race against the same bucket/DB.
+concurrency:
+  group: r2-gc
+  cancel-in-progress: false
+
+jobs:
+  gc:
+    name: Purge R2 objects of soft-deleted photos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invoke r2-gc Edge Function
+        run: |
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            "https://${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/r2-gc"

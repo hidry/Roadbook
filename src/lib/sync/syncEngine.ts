@@ -6,7 +6,10 @@
  * for it, so this can be swapped without a data migration.
  *
  * Push includes soft-deleted rows (tombstones) so deletions propagate. Pull
- * relies on Supabase RLS to only ever return rows the user may see.
+ * relies on Supabase RLS to only ever return rows the user may see. Because the
+ * SELECT policies filter `deleted_at IS NULL`, pullChanges never sees remote
+ * tombstones — pullTombstones covers that via the `pull_tombstones` RPC
+ * (migration 0006), so deletions also reach devices that already have the row.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -18,10 +21,13 @@ import { supabase } from '@/lib/supabase';
 import { flushLog, logLine } from '@/lib/debug-log';
 import { compressPhoto } from '@/lib/photos/compress';
 import { uploadPhotoToR2 } from '@/lib/photos/r2upload';
+import { groupTombstones, nextTombstoneWatermark, type TombstoneRow } from '@/lib/sync/tombstones';
 import { nowIso } from '@/lib/util/id';
 
-const TABLES: EntityType[] = ['trips', 'stops', 'photos'];
+// Push/pull order respects the FK chain: parents before children.
+const TABLES: EntityType[] = ['trips', 'stops', 'photos', 'tracks'];
 const LAST_PULL_KEY = (t: EntityType) => `sync:lastPull:${t}`;
+const LAST_TOMBSTONE_PULL_KEY = 'sync:lastTombstonePull';
 
 /** Decode the JWT payload without verification (for logging only). */
 function jwtPayload(token: string): Record<string, unknown> | null {
@@ -38,15 +44,22 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 /** Local-only columns that must never be sent to the backend. `local_uri` is a
  *  path on THIS device — meaningless (and misleading) on another, so a second
  *  device falls back to `storage_url` for display. */
+/** Trip columns stored locally as JSON text but as real arrays in Postgres. */
+const TRIP_ARRAY_COLS = ['shared_with', 'tags'] as const;
+
 function toRemote(table: EntityType, row: Row): Record<string, unknown> {
   const { pending_sync: _pending, local_uri: _localUri, ...rest } = row;
-  if (table === 'trips' && typeof rest.shared_with === 'string') {
-    // Local stores shared_with as JSON text; Postgres column is an array.
-    try {
-      return { ...rest, shared_with: JSON.parse(rest.shared_with) as string[] };
-    } catch {
-      return { ...rest, shared_with: [] };
+  if (table === 'trips') {
+    const out: Record<string, unknown> = { ...rest };
+    for (const col of TRIP_ARRAY_COLS) {
+      if (typeof out[col] !== 'string') continue;
+      try {
+        out[col] = JSON.parse(out[col] as string) as string[];
+      } catch {
+        out[col] = [];
+      }
     }
+    return out;
   }
   return rest;
 }
@@ -59,7 +72,7 @@ function toLocal(table: EntityType, row: Record<string, unknown>): Row {
     // path on the *uploading* device. Pulled rows keep local_uri = NULL so the
     // UI falls back to storage_url (the R2 URL); expo-image caches that.
     if (k === 'local_uri') continue;
-    if (k === 'shared_with') {
+    if (k === 'shared_with' || k === 'tags') {
       out[k] = JSON.stringify(Array.isArray(v) ? v : []);
     } else if (v === null || typeof v === 'string' || typeof v === 'number') {
       out[k] = v;
@@ -231,6 +244,41 @@ export async function pullChanges(): Promise<void> {
   }
 }
 
+/**
+ * Pulls remote soft-deletes and applies them locally. The regular pullChanges
+ * cannot see tombstones (the SELECT RLS filters `deleted_at IS NULL`), so this
+ * uses the `pull_tombstones` RPC, which returns only id + timestamps of deleted
+ * rows the user may see. Rows unknown locally are skipped (UPDATE is a no-op);
+ * last-write-wins still holds: a local edit NEWER than the deletion survives
+ * and re-creates the row remotely on the next push.
+ */
+export async function pullTombstones(): Promise<void> {
+  const db = getDb();
+  const since = (await AsyncStorage.getItem(LAST_TOMBSTONE_PULL_KEY)) ?? '1970-01-01T00:00:00.000Z';
+  const { data, error } = await supabase.rpc('pull_tombstones', { since });
+  if (error) {
+    logLine('SYNC:TOMBSTONE', `FEHLER: ${error.message}`, { code: error.code });
+    throw new Error(`pull tombstones: ${error.message}`);
+  }
+  const rows = (data ?? []) as TombstoneRow[];
+  if (rows.length === 0) return;
+
+  for (const [table, list] of groupTombstones(rows)) {
+    let applied = 0;
+    for (const t of list) {
+      await db.runAsync(
+        `UPDATE ${table} SET deleted_at = ?, updated_at = ?, pending_sync = 0
+         WHERE id = ? AND updated_at < ?;`,
+        [t.deleted_at, t.updated_at, t.id, t.updated_at],
+      );
+      const r = await db.getFirstAsync<{ n: number }>('SELECT changes() AS n');
+      applied += r?.n ?? 0;
+    }
+    logLine('SYNC:TOMBSTONE', `${table}: ${applied}/${list.length} Löschung(en) übernommen (since ${since})`);
+  }
+  await AsyncStorage.setItem(LAST_TOMBSTONE_PULL_KEY, nextTombstoneWatermark(rows, since));
+}
+
 /** Returns the total number of rows still waiting to be pushed. */
 export async function getPendingSyncCount(): Promise<number> {
   const db = getDb();
@@ -314,9 +362,11 @@ export async function syncNow(): Promise<void> {
   }
   syncInFlight = true;
   try {
-    // 1) Supabase first: push local metadata changes up, then pull remote down.
+    // 1) Supabase first: push local metadata changes up, then pull remote down
+    //    (tombstones travel on their own channel — RLS hides them from SELECT).
     await pushPending();
     await pullChanges();
+    await pullTombstones();
     // 2) R2 second: upload any photo binaries still pending/failed.
     const uploaded = await pushPhotoUploads();
     // 3) Push the resulting storage_url / status changes back up to Supabase.
