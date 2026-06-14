@@ -192,8 +192,18 @@ das Binary bliebe sonst für immer in R2 (Kosten + DSGVO, README §7). Der Workf
 deren Stop/Trip soft-gelöscht ist und die noch eine `storage_url` haben, löscht die
 R2-Objekte **hart** und tombstoned die Foto-Zeilen (Geräte ziehen die Löschung via
 `pull_tombstones` nach). Die Funktion ist **nicht user-aufrufbar** — sie verlangt den
-`service_role`-Key als Bearer. Benötigtes zusätzliches Repo-Secret:
-`SUPABASE_SERVICE_ROLE_KEY` (Dashboard → Settings → API).
+`service_role`-Key als Bearer.
+
+Dafür **zwei Secrets mit identischem Wert** (dem `service_role`-JWT `eyJ…` aus
+Dashboard → Settings → API → *Legacy* anon/service_role keys):
+1. **Supabase-Function-Secret `SB_SERVICE_ROLE_KEY`** — Dashboard → Edge Functions →
+   *Manage secrets* (oder `supabase secrets set SB_SERVICE_ROLE_KEY=eyJ…`). Die
+   Funktion nutzt ihn als erwarteten Bearer **und** für den DB-Client (RPC als
+   `service_role`). Eigener Name nötig, weil `SUPABASE_*`-Secrets reserviert sind
+   und nicht zuverlässig injiziert werden (sonst 401 bei jedem Aufruf).
+2. **GitHub-Repo-Secret `SUPABASE_SERVICE_ROLE_KEY`** — denselben Wert; der
+   `r2-gc.yml`-Workflow schickt ihn als Bearer. (Fallback: fehlt
+   `SB_SERVICE_ROLE_KEY`, greift die Funktion auf den auto-injizierten Wert zurück.)
 
 ## Karten-Tiles
 `EXPO_PUBLIC_MAP_STYLE_URL` setzen. Produktion: selbst-gehostete
