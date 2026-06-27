@@ -355,6 +355,24 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       auch der normale Pull sieht Löschungen jetzt mit. RLS-Test prüft die
       Soft-Delete-Vorbedingungen jetzt explizit (+2 Checks).
 
+### P21 — r2-gc-Auth-Fix: eigener Secret-Name `SB_SERVICE_ROLE_KEY` ✅
+> Erster echter `r2-gc`-Lauf (workflow_dispatch) → `401 {"error":"Unauthorized"}`
+> aus der Funktion selbst, mit Legacy-JWT **und** neuem Secret-Key. Ursache:
+> die Funktion verglich gegen den auto-injizierten `SUPABASE_SERVICE_ROLE_KEY` —
+> neuere Projekte injizieren ihn nicht zuverlässig, dann ist `serviceKey` leer
+> und **jeder** Aufruf scheitert (egal welcher Bearer). `SUPABASE_*`-Secrets
+> kann man nicht selbst setzen → kein manueller Workaround.
+
+- [x] Funktion liest den Key jetzt aus dem operator-setzbaren
+      `SB_SERVICE_ROLE_KEY` (Fallback: auto-injiziertes `SUPABASE_SERVICE_ROLE_KEY`);
+      derselbe Wert dient als erwarteter Bearer **und** als DB-Client-Key.
+- [x] Doku (DEVELOPMENT.md): zwei Secrets mit identischem Wert (Supabase-Function
+      `SB_SERVICE_ROLE_KEY` + GitHub `SUPABASE_SERVICE_ROLE_KEY` = `service_role`-JWT).
+- [⏳] **Setup:** `SB_SERVICE_ROLE_KEY` als Supabase-Function-Secret setzen
+      (Dashboard → Edge Functions → Manage secrets), Wert = derselbe `eyJ…`-JWT
+      wie im GitHub-Secret. Danach Redeploy (Merge → `supabase-functions.yml`)
+      und Workflow erneut anstoßen.
+
 ---
 
 ## Begriffe & Datenmodell ✅ ENTSCHIEDEN

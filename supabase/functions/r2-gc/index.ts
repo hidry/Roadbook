@@ -14,9 +14,17 @@
  * token (the scheduled `r2-gc.yml` workflow does). A user JWT passes the
  * gateway but is rejected here.
  *
+ * The same service-role key is used to (a) authenticate the caller and (b) run
+ * the DB client that calls `photos_to_purge()` (which only service_role may
+ * execute, bypassing RLS). It is read from the operator-set `SB_SERVICE_ROLE_KEY`
+ * with a fallback to the platform-injected `SUPABASE_SERVICE_ROLE_KEY`: newer
+ * Supabase projects don't reliably inject the latter, which made EVERY call 401
+ * regardless of the Bearer. `SB_` (non-reserved prefix) can be set by the
+ * operator via `supabase secrets set`; `SUPABASE_*` names cannot.
+ *
  * Secrets: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET,
- * R2_PUBLIC_BASE_URL (shared with r2-presign); SUPABASE_URL and
- * SUPABASE_SERVICE_ROLE_KEY are injected by the platform.
+ * R2_PUBLIC_BASE_URL (shared with r2-presign); SB_SERVICE_ROLE_KEY (operator-set
+ * = the project's service_role key); SUPABASE_URL is injected by the platform.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { AwsClient } from 'https://esm.sh/aws4fetch@1.0.20';
@@ -32,7 +40,9 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   // 1) Operator-only: Bearer must BE the service-role key (no user JWTs).
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  //    Prefer the operator-set SB_SERVICE_ROLE_KEY; fall back to the auto-
+  //    injected one (which newer projects may not provide → every call 401'd).
+  const serviceKey = Deno.env.get('SB_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!serviceKey || bearer !== serviceKey) return json({ error: 'Unauthorized' }, 401);
 
