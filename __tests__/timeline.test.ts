@@ -1,0 +1,111 @@
+import {
+  detectRouteFormat,
+  isTimelineJson,
+  parseLatLng,
+  parseRouteFile,
+  timelineSpan,
+  timelineToRouteModel,
+} from '@/lib/route-model';
+
+// Mirrors the real on-device Timeline.json schema (semanticSegments with
+// timelinePath / visit / activity; "<lat>°, <lng>°" strings).
+const TIMELINE = JSON.stringify({
+  semanticSegments: [
+    // Out of window (before) — must be ignored.
+    {
+      startTime: '2025-11-08T10:00:00.000+01:00',
+      endTime: '2025-11-08T12:00:00.000+01:00',
+      timelinePath: [{ point: '40.0°, 9.0°', time: '2025-11-08T10:57:00.000+01:00' }],
+    },
+    // In window: a visit (stop) ...
+    {
+      startTime: '2026-05-14T18:00:00.000+02:00',
+      endTime: '2026-05-15T08:00:00.000+02:00',
+      visit: {
+        topCandidate: { placeId: 'abc', semanticType: 'UNKNOWN', placeLocation: { latLng: '47.5°, 13.6°' } },
+      },
+    },
+    // ... a movement path ...
+    {
+      startTime: '2026-05-15T09:00:00.000+02:00',
+      endTime: '2026-05-15T10:00:00.000+02:00',
+      timelinePath: [
+        { point: '47.50°, 13.60°', time: '2026-05-15T09:10:00.000+02:00' },
+        { point: '47.60°, 13.70°', time: '2026-05-15T09:40:00.000+02:00' },
+        { point: '47.60°, 13.70°', time: '2026-05-15T09:41:00.000+02:00' }, // dup → dropped
+      ],
+    },
+    // ... and an activity (move with start/end).
+    {
+      startTime: '2026-05-15T10:00:00.000+02:00',
+      endTime: '2026-05-15T11:00:00.000+02:00',
+      activity: { start: { latLng: '47.60°, 13.70°' }, end: { latLng: '47.80°, 13.90°' }, topCandidate: { type: 'DRIVING' } },
+    },
+    // Out of window (after) — ignored.
+    {
+      startTime: '2026-06-19T10:00:00.000+02:00',
+      endTime: '2026-06-19T12:00:00.000+02:00',
+      timelinePath: [{ point: '49.0°, 11.0°', time: '2026-06-19T10:30:00.000+02:00' }],
+    },
+  ],
+  rawSignals: [{ secret: 'never touched' }],
+  userLocationProfile: { home: 'never touched' },
+});
+
+const RANGE = { from: '2026-05-14', to: '2026-05-24' };
+
+describe('parseLatLng', () => {
+  it('parses "<lat>°, <lng>°" (lat first, degree sign)', () => {
+    expect(parseLatLng('48.8908274°, 10.9239374°')).toEqual({ lat: 48.8908274, lng: 10.9239374 });
+    expect(parseLatLng('47.5°, 13.6°')).toEqual({ lat: 47.5, lng: 13.6 });
+  });
+  it('rejects junk', () => {
+    expect(parseLatLng('')).toBeNull();
+    expect(parseLatLng('48.0°')).toBeNull();
+    expect(parseLatLng(42 as unknown)).toBeNull();
+  });
+});
+
+describe('timelineSpan / isTimelineJson / detect', () => {
+  it('reports the full date span and segment count', () => {
+    expect(timelineSpan(TIMELINE)).toEqual({ from: '2025-11-08', to: '2026-06-19', segments: 5 });
+  });
+  it('detects Timeline content (any filename)', () => {
+    expect(isTimelineJson(TIMELINE)).toBe(true);
+    expect(detectRouteFormat('Zeitachse.json', TIMELINE)).toBe('timeline');
+  });
+  it('parseRouteFile points Timeline at its dedicated flow', () => {
+    expect(() => parseRouteFile('Zeitachse.json', TIMELINE)).toThrow('Google Timeline importieren');
+  });
+});
+
+describe('timelineToRouteModel', () => {
+  it('builds one track from in-window movement, sorted, deduped; ignores out-of-window + raw data', () => {
+    const m = timelineToRouteModel(TIMELINE, RANGE);
+    expect(m.stops).toHaveLength(0); // visits off by default
+    expect(m.tracks).toHaveLength(1);
+    const pts = m.tracks[0].points;
+    // path: 47.50/13.60, 47.60/13.70 (dup dropped); activity: 47.60/13.70 (dup vs prev) , 47.80/13.90
+    expect(pts.map((p) => [p.lat, p.lng])).toEqual([
+      [47.5, 13.6],
+      [47.6, 13.7],
+      [47.8, 13.9],
+    ]);
+    // The 40.0/9.0 (before) and 49.0/11.0 (after) points are NOT present.
+    expect(pts.some((p) => p.lat === 40 || p.lat === 49)).toBe(false);
+  });
+
+  it('emits visits as stops when requested', () => {
+    const m = timelineToRouteModel(TIMELINE, { ...RANGE, includeVisitsAsStops: true });
+    expect(m.stops).toEqual([{ name: null, lat: 47.5, lng: 13.6, time: '2026-05-14T18:00:00.000+02:00', notes: null }]);
+  });
+
+  it('returns no track when the window has fewer than 2 points', () => {
+    expect(timelineToRouteModel(TIMELINE, { from: '2026-06-19', to: '2026-06-19' }).tracks).toHaveLength(0);
+  });
+
+  it('throws on non-Timeline / invalid JSON', () => {
+    expect(() => timelineToRouteModel('{}', RANGE)).toThrow('semanticSegments');
+    expect(() => timelineToRouteModel('not json', RANGE)).toThrow('JSON');
+  });
+});
