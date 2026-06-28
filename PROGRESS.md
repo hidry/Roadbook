@@ -372,6 +372,29 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       (Dashboard → Edge Functions → Manage secrets), Wert = derselbe `eyJ…`-JWT
       wie im GitHub-Secret. Danach Redeploy (Merge → `supabase-functions.yml`)
       und Workflow erneut anstoßen.
+- [x] **Erledigt 2026-06-27:** `SB_SERVICE_ROLE_KEY` gesetzt, Funktion redeployt,
+      `r2-gc` per Dispatch erfolgreich → `{"candidates":0,"purged":0,"failures":[]}`.
+      GC läuft ab jetzt wöchentlich.
+
+### P22 — Google-Timeline-Import (Track aus `Timeline.json`) ✅ (Code) / ⏳ (Gerätelauf)
+> README §8.1 Tier 2: reichere Quelle als EXIF. Timeline liefert die **echte
+> gefahrene Strecke** (Track) unter den Foto-Stopps. Kein API-Zugriff möglich
+> (Google on-device seit 2024) → manueller Datei-Import. ⛔ DSGVO: nur der
+> Reise-Zeitraum wird extrahiert, **nie** der Roh-Dump (`rawSignals`/
+> `userLocationProfile` werden ignoriert).
+
+- [x] `src/lib/route-model/timeline.ts` (PURE): `parseLatLng` ("<lat>°, <lng>°"),
+      `timelineSpan`, `isTimelineJson`, `timelineToRouteModel(json, {from,to})` —
+      filtert `semanticSegments` aufs Fenster, baut **einen** Track aus
+      `timelinePath` + `activity`-Start/Ende (zeitsortiert, Duplikate raus);
+      `visit`→Stops optional (Default aus). 9 Unit-Tests
+- [x] `detectRouteFormat` erkennt Timeline-JSON; `parseRouteFile` verweist auf
+      den eigenen Flow (Timeline braucht einen Zeitraum)
+- [x] UI Trip-Screen „📍 Google Timeline importieren": Datei-Picker → Fenster
+      **automatisch aus den datierten Stopps** der Reise (±1 Tag) → Bestätigung
+      mit Punktzahl → Track anlegen; klare Meldung, wenn die Datei den Zeitraum
+      nicht abdeckt
+- [⏳] Gerätelauf mit echter `Timeline.json` (14 MB, getestet gegen reales Schema)
 
 ---
 

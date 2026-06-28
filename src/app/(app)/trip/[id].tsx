@@ -17,6 +17,8 @@ import {
   parseRouteFile,
   routeModelStats,
   stopsFromModel,
+  timelineSpan,
+  timelineToRouteModel,
   toGpx,
   tracksFromModel,
 } from '@/lib/route-model';
@@ -168,6 +170,68 @@ export default function TripScreen() {
     }
   }
 
+  // Google Timeline import: the export is the user's WHOLE movement history, so
+  // we extract ONLY this trip's window (derived from its dated stops) and keep
+  // only the resulting track — never the raw dump (README §7/§8.1). Timeline
+  // supplies the real driven route UNDER the photo stops.
+  async function importTimeline() {
+    const dated = stops
+      .map((s) => s.arrivalDate)
+      .filter((d): d is string => !!d)
+      .sort();
+    let from = dated[0] ?? trip?.startDate ?? null;
+    let to = dated[dated.length - 1] ?? trip?.startDate ?? null;
+    if (!from || !to) {
+      Alert.alert(
+        'Google Timeline',
+        'Für den Timeline-Import braucht die Reise einen Zeitraum. Importiere zuerst Fotos (das erzeugt Stopps mit Datum) oder setze ein Startdatum.',
+      );
+      return;
+    }
+    // Pad a day on each side so arrival/return-day movement is included.
+    const shift = (d: string, days: number) =>
+      new Date(Date.parse(`${d}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    from = shift(from, -1);
+    to = shift(to, 1);
+
+    const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
+    if (res.canceled || !res.assets?.[0]) return;
+    try {
+      const content = await readAsStringAsync(res.assets[0].uri);
+      const model = timelineToRouteModel(content, { from, to });
+      const stats = routeModelStats(model);
+      if (stats.trackPoints === 0) {
+        const span = timelineSpan(content);
+        Alert.alert(
+          'Google Timeline',
+          span
+            ? `Kein Streckenverlauf im Reisezeitraum (${from} – ${to}) gefunden.\nDie Datei deckt ${span.from} – ${span.to} ab.`
+            : 'Keine gültige Google-Timeline-Datei.',
+        );
+        return;
+      }
+      Alert.alert(
+        'Timeline-Track importieren?',
+        `Zeitraum ${from} – ${to}\n${stats.trackPoints} Streckenpunkte (${stats.tracks} Track).\n\nNur die Strecke dieser Reise wird übernommen — der restliche Verlauf wird verworfen.`,
+        [
+          { text: 'Abbrechen', style: 'cancel' },
+          {
+            text: 'Importieren',
+            onPress: async () => {
+              for (const t of tracksFromModel(model)) {
+                await trackRepo.create({ tripId: id, ...t });
+              }
+              await load();
+              syncAfterWrite();
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      Alert.alert('Import fehlgeschlagen', e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function exportGpx() {
     if (!trip) return;
     try {
@@ -284,6 +348,7 @@ export default function TripScreen() {
         />
         <ThemedText type="smallBold">Import & Export</ThemedText>
         <Button title="🗺 GPX/KML importieren" variant="secondary" onPress={importRouteFile} />
+        <Button title="📍 Google Timeline importieren" variant="secondary" onPress={importTimeline} />
         <Button
           title="📤 Als GPX exportieren"
           variant="secondary"
