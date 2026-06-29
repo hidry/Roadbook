@@ -5,6 +5,7 @@ import {
   parseRouteFile,
   timelineSpan,
   timelineToRouteModel,
+  tripDateWindow,
 } from '@/lib/route-model';
 
 // Mirrors the real on-device Timeline.json schema (semanticSegments with
@@ -76,6 +77,31 @@ describe('timelineSpan / isTimelineJson / detect', () => {
   });
   it('parseRouteFile points Timeline at its dedicated flow', () => {
     expect(() => parseRouteFile('Zeitachse.json', TIMELINE)).toThrow('Google Timeline importieren');
+  });
+});
+
+describe('tripDateWindow', () => {
+  it('handles FULL ISO arrivalDates (photo import) — regression: no crash, date-only ±1d', () => {
+    // clustering.ts stores arrivalDate as new Date(...).toISOString().
+    const dates = ['2026-06-19T08:30:00.000Z', '2026-06-21T17:00:00.000Z'];
+    expect(tripDateWindow(dates)).toEqual({ from: '2026-06-18', to: '2026-06-22' });
+  });
+
+  it('handles plain YYYY-MM-DD and ignores nulls', () => {
+    expect(tripDateWindow([null, '2026-05-14', null, '2026-05-24'])).toEqual({ from: '2026-05-13', to: '2026-05-25' });
+  });
+
+  it('falls back to the trip start date when no stop is dated', () => {
+    expect(tripDateWindow([null, null], '2026-04-30')).toEqual({ from: '2026-04-29', to: '2026-05-01' });
+  });
+
+  it('returns null when nothing is a valid date', () => {
+    expect(tripDateWindow([null, 'kaputt', ''], null)).toBeNull();
+    expect(tripDateWindow([])).toBeNull();
+  });
+
+  it('respects a custom pad', () => {
+    expect(tripDateWindow(['2026-06-19'], null, 0)).toEqual({ from: '2026-06-19', to: '2026-06-19' });
   });
 });
 
