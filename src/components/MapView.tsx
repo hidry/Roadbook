@@ -52,6 +52,20 @@ export function RouteMap({ stops, tracks = [], style }: { stops: Stop[]; tracks?
     .filter((coords) => coords.length >= 2);
   const allCoords = [...lineCoords, ...trackLines.flat()];
 
+  // ONE source/layer with STABLE ids — only data + paint change. MapLibre throws
+  // "`id` cannot be changed" if a Source/Layer's id prop changes between renders,
+  // which happened when a freshly imported track swapped the source id in place.
+  const hasTrack = trackLines.length > 0;
+  const lineFeatures = (hasTrack ? trackLines : lineCoords.length >= 2 ? [lineCoords] : []).map(
+    (coords) => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: coords } }),
+  );
+  const linePaint = {
+    'line-color': '#208AEF',
+    'line-width': 3,
+    // Dashed only for the air-line fallback; a real track is drawn solid.
+    ...(hasTrack ? {} : { 'line-dasharray': [2, 2] }),
+  };
+
   return (
     <View style={[styles.container, style]}>
       <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle}>
@@ -63,32 +77,9 @@ export function RouteMap({ stops, tracks = [], style }: { stops: Stop[]; tracks?
           <Camera zoom={3} center={[10.0, 51.0]} />
         )}
 
-        {trackLines.length > 0 ? (
-          <GeoJSONSource
-            id="track-lines"
-            data={{
-              type: 'FeatureCollection',
-              features: trackLines.map((coords) => ({
-                type: 'Feature' as const,
-                properties: {},
-                geometry: { type: 'LineString' as const, coordinates: coords },
-              })),
-            }}>
-            <Layer id="track-lines-layer" type="line" paint={{ 'line-color': '#208AEF', 'line-width': 3 }} />
-          </GeoJSONSource>
-        ) : lineCoords.length >= 2 ? (
-          <GeoJSONSource
-            id="route-line"
-            data={{
-              type: 'Feature',
-              properties: {},
-              geometry: { type: 'LineString', coordinates: lineCoords },
-            }}>
-            <Layer
-              id="route-line-layer"
-              type="line"
-              paint={{ 'line-color': '#208AEF', 'line-width': 3, 'line-dasharray': [2, 2] }}
-            />
+        {lineFeatures.length > 0 ? (
+          <GeoJSONSource id="route-line" data={{ type: 'FeatureCollection', features: lineFeatures }}>
+            <Layer id="route-line-layer" type="line" paint={linePaint} />
           </GeoJSONSource>
         ) : null}
 

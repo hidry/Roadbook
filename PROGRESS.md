@@ -400,6 +400,15 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       `RangeError` **vor** dem `try/catch` (stiller Crash). Fensterberechnung in
       pure `tripDateWindow()` (slice auf `YYYY-MM-DD` + NaN-Schutz) ausgelagert
       + Regressionstest; `importTimeline` komplett in `try/catch`.
+- [x] **Bugfix 2 (Gerätelauf): MapLibre-Render-Crash nach dem Import**
+      („`id` cannot be changed"). Die Karte schaltete im selben JSX-Slot von der
+      Luftlinien-`GeoJSONSource` (`id="route-line"`) auf die Track-Quelle
+      (`id="track-lines"`) um, sobald ein Track existierte → React reconcilte
+      dieselbe Instanz mit neuer `id` → MapLibre wirft. Fix: **eine** Quelle/
+      Layer mit **stabiler `id`**, nur `data` + Linien-Stil (solid/gestrichelt)
+      wechseln. Import selbst war erfolgreich (Track gespeichert) — nur die
+      Anzeige crashte. Zusätzlich: `ErrorBoundary` bekommt „Erneut versuchen"
+      (kein Sackgassen-Screen mehr).
 - [⏳] Gerätelauf mit echter `Timeline.json` (14 MB, gegen reales Schema getestet)
 
 ---
