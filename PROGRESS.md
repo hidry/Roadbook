@@ -394,7 +394,13 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       **automatisch aus den datierten Stopps** der Reise (±1 Tag) → Bestätigung
       mit Punktzahl → Track anlegen; klare Meldung, wenn die Datei den Zeitraum
       nicht abdeckt
-- [⏳] Gerätelauf mit echter `Timeline.json` (14 MB, getestet gegen reales Schema)
+- [x] **Bugfix (Gerätelauf):** Der Button reagierte nicht — foto-importierte
+      Stopps speichern `arrivalDate` als **vollständigen ISO-Zeitstempel**
+      (`clustering.ts`), die naive `${d}T00:00:00Z`-Berechnung warf dann
+      `RangeError` **vor** dem `try/catch` (stiller Crash). Fensterberechnung in
+      pure `tripDateWindow()` (slice auf `YYYY-MM-DD` + NaN-Schutz) ausgelagert
+      + Regressionstest; `importTimeline` komplett in `try/catch`.
+- [⏳] Gerätelauf mit echter `Timeline.json` (14 MB, gegen reales Schema getestet)
 
 ---
 

@@ -17,6 +17,7 @@ export {
   parseLatLng,
   timelineSpan,
   timelineToRouteModel,
+  tripDateWindow,
   type TimelineImportOptions,
 } from './timeline';
 

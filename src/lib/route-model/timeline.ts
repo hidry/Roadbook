@@ -27,6 +27,35 @@ export interface TimelineImportOptions {
   includeVisitsAsStops?: boolean;
 }
 
+/**
+ * Inclusive [from,to] date window (YYYY-MM-DD), padded by `padDays` on each
+ * side, derived from a trip's stop dates (+ optional trip start date). Inputs
+ * may be FULL ISO timestamps — photo-imported stops store `arrivalDate` as
+ * `new Date(...).toISOString()` (clustering.ts), so only the date part is used.
+ * Returns null when no usable date exists. PURE — used by the import UI to scope
+ * the Timeline extraction to just this trip.
+ *
+ * (Guards against the silent crash where naive `${d}T00:00:00Z` on a full ISO
+ * string yields an invalid date and `toISOString()` throws.)
+ */
+export function tripDateWindow(
+  dates: (string | null | undefined)[],
+  startDate: string | null = null,
+  padDays = 1,
+): { from: string; to: string } | null {
+  const days = [...dates, startDate]
+    .map((d) => (typeof d === 'string' ? d.slice(0, 10) : ''))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  if (days.length === 0) return null;
+  const shift = (d: string, n: number): string => {
+    const t = Date.parse(`${d}T00:00:00Z`);
+    if (Number.isNaN(t)) return d;
+    return new Date(t + n * 86_400_000).toISOString().slice(0, 10);
+  };
+  return { from: shift(days[0], -padDays), to: shift(days[days.length - 1], padDays) };
+}
+
 /** Parses a Timeline coordinate string "<lat>°, <lng>°" → {lat,lng} or null. */
 export function parseLatLng(raw: unknown): { lat: number; lng: number } | null {
   if (typeof raw !== 'string') return null;

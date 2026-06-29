@@ -21,6 +21,7 @@ import {
   timelineToRouteModel,
   toGpx,
   tracksFromModel,
+  tripDateWindow,
 } from '@/lib/route-model';
 import { syncNow } from '@/lib/sync/syncEngine';
 import { formatTags, parseTagInput } from '@/lib/util/tags';
@@ -175,28 +176,22 @@ export default function TripScreen() {
   // only the resulting track — never the raw dump (README §7/§8.1). Timeline
   // supplies the real driven route UNDER the photo stops.
   async function importTimeline() {
-    const dated = stops
-      .map((s) => s.arrivalDate)
-      .filter((d): d is string => !!d)
-      .sort();
-    let from = dated[0] ?? trip?.startDate ?? null;
-    let to = dated[dated.length - 1] ?? trip?.startDate ?? null;
-    if (!from || !to) {
-      Alert.alert(
-        'Google Timeline',
-        'Für den Timeline-Import braucht die Reise einen Zeitraum. Importiere zuerst Fotos (das erzeugt Stopps mit Datum) oder setze ein Startdatum.',
-      );
-      return;
-    }
-    // Pad a day on each side so arrival/return-day movement is included.
-    const shift = (d: string, days: number) =>
-      new Date(Date.parse(`${d}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
-    from = shift(from, -1);
-    to = shift(to, 1);
-
-    const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
-    if (res.canceled || !res.assets?.[0]) return;
     try {
+      // Window from the trip's dated stops (±1 day). arrivalDate from photo
+      // import is a FULL ISO timestamp, so tripDateWindow slices to YYYY-MM-DD
+      // (a naive concat would throw and the button would silently do nothing).
+      const window = tripDateWindow(stops.map((s) => s.arrivalDate), trip?.startDate ?? null);
+      if (!window) {
+        Alert.alert(
+          'Google Timeline',
+          'Für den Timeline-Import braucht die Reise einen Zeitraum. Importiere zuerst Fotos (das erzeugt Stopps mit Datum) oder setze ein Startdatum.',
+        );
+        return;
+      }
+      const { from, to } = window;
+
+      const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
+      if (res.canceled || !res.assets?.[0]) return;
       const content = await readAsStringAsync(res.assets[0].uri);
       const model = timelineToRouteModel(content, { from, to });
       const stats = routeModelStats(model);
