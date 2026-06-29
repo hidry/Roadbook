@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { appendLog } from '@/lib/debug-log';
 
@@ -24,6 +24,12 @@ export class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.title}>Unerwarteter Fehler</Text>
           <Text style={styles.message}>{this.state.error.message}</Text>
           <Text style={styles.hint}>Details wurden ins Diagnose-Log geschrieben.</Text>
+          {/* Clear the boundary so the user isn't dead-ended (e.g. can reach the
+              menu / diagnostic log). If the same screen re-crashes immediately,
+              tapping again is harmless. */}
+          <Pressable style={styles.button} onPress={() => this.setState({ error: null })}>
+            <Text style={styles.buttonText}>Erneut versuchen</Text>
+          </Pressable>
         </View>
       );
     }
@@ -36,4 +42,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
   message: { color: '#555', textAlign: 'center', marginBottom: 8 },
   hint: { color: '#888', fontSize: 12, textAlign: 'center' },
+  button: {
+    marginTop: 20,
+    backgroundColor: '#208AEF',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  buttonText: { color: '#fff', fontWeight: '700' },
 });
