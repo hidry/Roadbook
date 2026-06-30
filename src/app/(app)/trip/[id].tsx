@@ -205,23 +205,39 @@ export default function TripScreen() {
         );
         return;
       }
-      Alert.alert(
-        'Timeline-Track importieren?',
-        `Zeitraum ${from} – ${to}\n${stats.trackPoints} Streckenpunkte (${stats.tracks} Track).\n\nNur die Strecke dieser Reise wird übernommen — der restliche Verlauf wird verworfen.`,
-        [
+      // Apply: optionally clear existing tracks first (re-import → no stacking).
+      const apply = async (replace: boolean) => {
+        if (replace) {
+          for (const t of tracks) await trackRepo.remove(t.id);
+        }
+        for (const t of tracksFromModel(model)) {
+          await trackRepo.create({ tripId: id, ...t });
+        }
+        await load();
+        syncAfterWrite();
+      };
+
+      const summary =
+        `Zeitraum ${from} – ${to}\n${stats.trackPoints} Streckenpunkte (${stats.tracks} Track).\n\n` +
+        'Nur die Strecke dieser Reise wird übernommen — der restliche Verlauf wird verworfen.';
+
+      if (tracks.length > 0) {
+        // Re-import: let the user replace the existing track(s) or add alongside.
+        Alert.alert(
+          'Timeline-Track importieren?',
+          `${summary}\n\nDie Reise hat bereits ${tracks.length} Track(s).`,
+          [
+            { text: 'Abbrechen', style: 'cancel' },
+            { text: 'Ersetzen', style: 'destructive', onPress: () => void apply(true) },
+            { text: 'Ergänzen', onPress: () => void apply(false) },
+          ],
+        );
+      } else {
+        Alert.alert('Timeline-Track importieren?', summary, [
           { text: 'Abbrechen', style: 'cancel' },
-          {
-            text: 'Importieren',
-            onPress: async () => {
-              for (const t of tracksFromModel(model)) {
-                await trackRepo.create({ tripId: id, ...t });
-              }
-              await load();
-              syncAfterWrite();
-            },
-          },
-        ],
-      );
+          { text: 'Importieren', onPress: () => void apply(false) },
+        ]);
+      }
     } catch (e) {
       Alert.alert('Import fehlgeschlagen', e instanceof Error ? e.message : String(e));
     }

@@ -103,15 +103,29 @@ export function isTimelineJson(content: string): boolean {
 }
 
 /**
+ * Max accuracy (metres) for a raw GPS fix to be trusted for the track. The
+ * `timelinePath`/`activity` layer is sparse (Google downsamples it, so the line
+ * cuts corners); the much denser `rawSignals` position fixes pull it onto the
+ * road. We accept any source (GPS/WIFI/CELL) but gate on accuracy so wildly
+ * off-road fixes don't add zig-zags. (Median real accuracy ≈ 30 m.)
+ */
+const MAX_FIX_ACCURACY_M = 100;
+
+/**
  * Builds a RouteModel from a Timeline export, restricted to the trip window.
- * The track concatenates every in-window movement point (timelinePath points +
- * activity start/end), sorted by time, with exact consecutive duplicates
- * dropped. Throws (German message) on unparseable input.
+ * The track merges every in-window movement point — `timelinePath` points,
+ * `activity` start/end, AND accurate `rawSignals` GPS fixes — sorted by time,
+ * with exact consecutive duplicates dropped. Throws (German message) on
+ * unparseable input.
+ *
+ * ⛔ DSGVO: only the trip window is read; only coordinates+time are taken from
+ * `rawSignals` (never the WiFi scans / `userLocationProfile`), and the raw file
+ * is never stored — same contract as before, just denser.
  */
 export function timelineToRouteModel(jsonText: string, opts: TimelineImportOptions): RouteModel {
-  let doc: { semanticSegments?: Segment[] };
+  let doc: { semanticSegments?: Segment[]; rawSignals?: Segment[] };
   try {
-    doc = JSON.parse(jsonText) as { semanticSegments?: Segment[] };
+    doc = JSON.parse(jsonText) as { semanticSegments?: Segment[]; rawSignals?: Segment[] };
   } catch {
     throw new Error('Datei ist kein gültiges JSON.');
   }
@@ -153,6 +167,19 @@ export function timelineToRouteModel(jsonText: string, opts: TimelineImportOptio
         } satisfies RoutePoint);
       }
     }
+  }
+
+  // Denser layer: raw GPS fixes within the window (accuracy-gated). These pull
+  // the line onto the road where the semantic path only has sparse points.
+  for (const sig of doc.rawSignals ?? []) {
+    const pos = sig.position as Segment | undefined;
+    if (!pos) continue; // wifiScan / activityRecord entries carry no position
+    const time = typeof pos.timestamp === 'string' ? pos.timestamp : '';
+    if (!time || time.slice(0, 10) < opts.from || time.slice(0, 10) > opts.to) continue;
+    const acc = typeof pos.accuracyMeters === 'number' ? pos.accuracyMeters : Infinity;
+    if (acc > MAX_FIX_ACCURACY_M) continue;
+    const c = parseLatLng(pos.LatLng);
+    if (c) raw.push({ ...c, time });
   }
 
   // Sort by time (points without a time keep their insertion order via a stable

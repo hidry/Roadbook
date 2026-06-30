@@ -49,7 +49,16 @@ const TIMELINE = JSON.stringify({
       timelinePath: [{ point: '49.0°, 11.0°', time: '2026-06-19T10:30:00.000+02:00' }],
     },
   ],
-  rawSignals: [{ secret: 'never touched' }],
+  rawSignals: [
+    // In-window accurate GPS fix → merged into the track (between 09:10 and 09:40).
+    { position: { LatLng: '47.55°, 13.65°', accuracyMeters: 20, source: 'GPS', timestamp: '2026-05-15T09:20:00.000+02:00' } },
+    // In-window but too inaccurate → dropped.
+    { position: { LatLng: '47.70°, 13.80°', accuracyMeters: 5000, source: 'CELL', timestamp: '2026-05-15T09:30:00.000+02:00' } },
+    // Out of window → dropped.
+    { position: { LatLng: '10.0°, 10.0°', accuracyMeters: 10, source: 'GPS', timestamp: '2025-11-08T11:00:00.000+01:00' } },
+    // No position (wifiScan) → ignored.
+    { wifiScan: { foo: 1 } },
+  ],
   userLocationProfile: { home: 'never touched' },
 });
 
@@ -106,19 +115,22 @@ describe('tripDateWindow', () => {
 });
 
 describe('timelineToRouteModel', () => {
-  it('builds one track from in-window movement, sorted, deduped; ignores out-of-window + raw data', () => {
+  it('merges semantic path + activity + accurate rawSignals, sorted/deduped; drops noise', () => {
     const m = timelineToRouteModel(TIMELINE, RANGE);
     expect(m.stops).toHaveLength(0); // visits off by default
     expect(m.tracks).toHaveLength(1);
     const pts = m.tracks[0].points;
-    // path: 47.50/13.60, 47.60/13.70 (dup dropped); activity: 47.60/13.70 (dup vs prev) , 47.80/13.90
+    // By time: 09:10 path → 09:20 rawSignal(GPS,20m) → 09:40 path (09:41 dup
+    // dropped) → 10:00 activity start (dup) → 11:00 activity end.
     expect(pts.map((p) => [p.lat, p.lng])).toEqual([
       [47.5, 13.6],
+      [47.55, 13.65], // denser GPS fix pulled in
       [47.6, 13.7],
       [47.8, 13.9],
     ]);
-    // The 40.0/9.0 (before) and 49.0/11.0 (after) points are NOT present.
-    expect(pts.some((p) => p.lat === 40 || p.lat === 49)).toBe(false);
+    // Out-of-window (40/9, 49/11, 10/10) and the inaccurate CELL fix (47.70/13.80,
+    // 5000 m) are NOT present; rawSignals wifiScan/userLocationProfile untouched.
+    expect(pts.some((p) => [40, 49, 10].includes(p.lat) || p.lng === 13.8)).toBe(false);
   });
 
   it('emits visits as stops when requested', () => {

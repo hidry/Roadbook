@@ -409,7 +409,18 @@ Typecheck, Jest-Unit-Tests und (lokal/CI) RLS-Tests. Gerätelauf/EAS/Cloud spät
       wechseln. Import selbst war erfolgreich (Track gespeichert) — nur die
       Anzeige crashte. Zusätzlich: `ErrorBoundary` bekommt „Erneut versuchen"
       (kein Sackgassen-Screen mehr).
+- [x] **Genauer (Gerätefeedback): dichtere GPS-Punkte + Re-Import.** Der Track
+      nutzte nur die grobe `semanticSegments`-Ebene (Google dünnt sie aus →
+      Kurven abgeschnitten). Jetzt zusätzlich die **`rawSignals`-GPS-Fixes** im
+      Reisefenster (`accuracyMeters ≤ 100`, jede Quelle; nur Koord.+Zeit, keine
+      WLAN-Scans/`userLocationProfile`) → Betzenstein 277 → **765** Punkte
+      (~2,8×). ⚠️ Google behält Rohsignale nur ~30 Tage, daher greift das nur
+      für **jüngste** Reisen; ältere bleiben bei der semantischen Ebene.
+      **Re-Import**: bei vorhandenen Tracks fragt der Dialog **Ersetzen**
+      (alte soft-löschen) vs. **Ergänzen** → kein Stapeln/Duplizieren mehr.
 - [⏳] Gerätelauf mit echter `Timeline.json` (14 MB, gegen reales Schema getestet)
+- [ ] Optional (verworfen für jetzt): echtes Straßen-Snapping via Routing-API
+      (Map-Matching) für perfekt straßentreue Linien — externer Dienst, Tier 3
 
 ---
 
